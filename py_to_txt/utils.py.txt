@@ -154,57 +154,32 @@ ensure_dir("dist")
 # Selenium XPATH 핸들링 유틸리티
 ##############################
 
-def random_sleep(min_sec=0.5, max_sec=1.5):
-    """
-    동작 사이 클록 간격을 임의로 랜덤 설정하는 함수
-
-    Args:
-        min_sec (float): 최소 딜레이 시간(초)
-        max_sec (float): 최대 딜레이 시간(초)
-    """
-    delay = random.uniform(min_sec, max_sec)
-    time.sleep(delay)
-
 def x_path_click(driver, xpath: str, wait_time=10):
     """
-    지정한 xpath를 클릭하는 함수. 클릭 전후 랜덤 딜레이 포함.
-
-    Args:
-        driver: Selenium WebDriver 객체
-        xpath: 클릭 대상 xpath 문자열
-        wait_time: 요소 대기 시간(초)
+    지정한 xpath를 클릭합니다.
+    예외 발생 시 홈 복구 없이 에러만 출력하고 raise로 상위에서 처리하도록 함.
     """
     try:
-        random_sleep(0.3, 1.0)  # 클릭 전 랜덤 딜레이
         wait = WebDriverWait(driver, wait_time)
-        wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         element = driver.find_element(By.XPATH, xpath)
         driver.execute_script("arguments[0].click();", element)
-        random_sleep(0.2, 0.8)  # 클릭 후 랜덤 딜레이
     except (TimeoutException, NoSuchElementException) as e:
         print(f"[WARN] XPATH 클릭 실패: {xpath}\n에러: {e}")
-        raise
+        raise   # 예외를 상위로 올림
     except Exception as e:
         print(f"[ERROR] 알 수 없는 예외: {e}")
         raise
 
 def x_path_send_keys(driver, xpath: str, send: str, wait_time=10):
     """
-    해당 xpath에 문자열 키 입력. 입력 전후 랜덤 딜레이 포함.
-
-    Args:
-        driver: Selenium WebDriver 객체
-        xpath: 입력 대상 xpath 문자열
-        send: 입력할 문자열
-        wait_time: 요소 대기 시간(초)
+    해당 xpath에 send_keys 입력 (예외처리/복구 URL 이동 삭제, 예외를 raise)
     """
     try:
-        random_sleep(0.3, 1.0)  # 입력 전 랜덤 딜레이
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         element = driver.find_element(By.XPATH, xpath)
         element.send_keys(send)
-        random_sleep(0.2, 0.6)  # 입력 후 랜덤 딜레이
     except (TimeoutException, NoSuchElementException) as e:
         print(f"[WARN] XPATH send_keys 실패: {xpath}\n에러: {e}")
         raise

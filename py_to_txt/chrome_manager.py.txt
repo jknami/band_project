@@ -127,14 +127,11 @@ def select_mobile_and_get_driver():
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-software-rasterizer')
 
-    # 탐지 회피 관련 옵션 추가
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
-
     for opt in DEFAULT_CHROME_OPTIONS:
         options.add_argument(opt)                           # 기본 옵션
     options.add_argument(f"user-agent={USER_AGENT}")       # 사용자 에이전트
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
 
     # 5-1)======비밀번호 저장/자동완성 관리 팝업 사전 차단 ======
     # 이 프리퍼런스(prefs) 옵션을 추가하면 로그인 후 비밀번호 저장 안내창이 더 이상 나타나지 않음
@@ -152,21 +149,15 @@ def select_mobile_and_get_driver():
     # 7) 네이버밴드 로그인 페이지로 자동 이동
     driver.get(NAVERBAND_URL)
 
-   # 탐지 JS 속성 우회 강화 (execute_cdp_cmd 사용)
+    # ====== 탐지 차단을 위한 브라우저 JS 속성 조작 ======
     try:
-        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-                Object.defineProperty(navigator, 'webdriver', {get: () => false});
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5],
-                });
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['ko-KR', 'ko'],
-                });
-            """
-        })
+        driver.execute_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko']});
+        """)
     except Exception as e:
-        print(f"[WARN] 탐지 JS 우회 코드 주입 실패: {e}")
+        print(f"[WARN] JS 탐지 차단 적용 실패: {e}")
 
 
     # 8) 드라이버에 선택된 전화번호 정보 저장
