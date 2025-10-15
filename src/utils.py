@@ -12,6 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from config import URL_MODES, CHROME_PROFILE_DIRNAME, COOKIE_DIRNAME
 from config import TXT_DIR, IMAGE_DIR
+import time
 
 
 
