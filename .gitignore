@@ -12,3 +12,4 @@ wheels/
 
 # 계정별 개인정보 및 세션 데이터 제외
 accounts/
+logs/
