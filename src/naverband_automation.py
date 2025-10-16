@@ -7,19 +7,30 @@ import pyautogui
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from src.utils import resource_path, get_random_file, x_path_click
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.alert import Alert
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+from selenium.webdriver.common.keys import Keys
+from src.utils import (resource_path,
+    get_random_file, x_path_click, human_delay, move_mouse_naturally, focus_window, logger)
+from config import *
+from resources.xpath_dict import xpath_dict
+from src.utils import realistic_typing, safe_xpath_click, x_path_human_click
 
 def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, do_clear=True):
-    """
-    지정 경로에서 랜덤 텍스트파일 내용을 XPath 위치에 입력.
-    예외 발생 시 복구URL 이동 없이 print + raise.
-    """
     file = get_random_file(folder_path)
     try:
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
-        time.sleep(0.5)
+        element = driver.find_element(By.XPATH, xpath)
+        if do_clear:
+            try: element.clear()
+            except Exception: pass
+        human_delay('click')
+        element.click()
+        time.sleep(random.uniform(0.3, 1.1))
+
         text_content = None
         for enc in ('utf-8', 'utf-8-sig', 'cp949'):
             try:
@@ -30,24 +41,17 @@ def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, d
                 continue
         if text_content is None:
             raise UnicodeDecodeError(f"인코딩 모든 시도가 실패했습니다: {file}")
-        element = driver.find_element(By.XPATH, xpath)
-        if do_clear:
-            element.clear()
-        element.send_keys(text_content)
-        print(f"[INFO] 파일 첨부 성공: {file}")
-    except (TimeoutException, NoSuchElementException) as e:
-        print(f"[WARN] 텍스트 입력 실패: {xpath}\n에러: {e}")
-        raise
-    except FileNotFoundError as e:
-        print(f"[ERROR] 파일 없음: {file}\n에러: {e}")
-        raise
-    except UnicodeDecodeError as e:
-        print(f"[ERROR] 인코딩 실패: {file}\n에러: {e}")
-        raise
-    except Exception as e:
-        print(f"[ERROR] 알 수 없는 예외: {e}")
-        raise
+        text_content = text_content.strip()
+        if len(text_content) > 1600:
+            text_content = text_content[:random.randint(1200, 1500)]
 
+        realistic_typing(element, text_content)
+        logger.info("[INFO] 본문 자동 입력 성공 (현실적 패턴)")
+
+    except Exception as e:
+        driver.save_screenshot("input_error_debug.png")
+        logger.error(f"[ERROR] 본문 입력 실패: {file}\n에러: {e}")
+        raise
 
 def upload_file_from_folder(driver, folder_path: str, wait_time=10):
     """
@@ -55,91 +59,84 @@ def upload_file_from_folder(driver, folder_path: str, wait_time=10):
     예외 발생 시 홈으로 가지 않고, print 후 raise.
     """
     file_path = get_random_file(folder_path)
+    move_mouse_naturally()
     try:
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='file']")))
         file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        human_delay('upload')
         file_input.send_keys(file_path)
-        print(f"[INFO] 파일 첨부 성공: {file_path}")
+        logger.info(f"[INFO] 파일 첨부 성공: {file_path}")
     except (TimeoutException, NoSuchElementException) as e:
-        print(f"[WARN] 파일 첨부 실패: input[type='file']\n에러: {e}")
+        logger.warning(f"[WARN] 파일 첨부 실패: input[type='file']\n에러: {e}")
         raise
     except FileNotFoundError as e:
-        print(f"[ERROR] 첨부파일 없음: {file_path}\n에러: {e}")
+        logger.error(f"[ERROR] 첨부파일 없음: {file_path}\n에러: {e}")
         raise
     except Exception as e:
-        print(f"[ERROR] 알 수 없는 예외: {e}")
+        logger.error(f"[ERROR] 알 수 없는 예외: {e}")
         raise
 
 
 
 def process_band(driver, xpath_dict, band, TXT_DIR, IMAGE_DIR):
     """
-    단일 밴드에 대해 각 자동화 작업을 수행하는 함수입니다.
-    각 단계에는 네이버밴드 게시글 작성의 실제 플로우와 일치하는 상세 주석을 달았습니다.
-    Args:
-        driver: Selenium 브라우저 객체
-        xpath_dict: 주요 버튼의 XPath 정보를 담아둔 딕셔너리
-        band: 현재 반복에서 조작할 밴드 XPath
-        TXT_DIR: 게시글에 사용할 텍스트 파일 폴더 경로
-        IMAGE_DIR: 업로드할 이미지 폴더 경로
+    밴드 작업을 사람 행동처럼 자연스럽게 수행
     """
+    # 브라우저 창 포커스 유지 (윈도우창 제목 예시)
+    focus_window("band")
 
-    # 1. 밴드(XPATH) 클릭: 네이버밴드 홈에서 해당 밴드 페이지로 이동
+    # 마우스 자연 이동 후 밴드 클릭
+    move_mouse_naturally()
     x_path_click(driver, band)
-    time.sleep(random.uniform(1, 3))  # 사람처럼 보이도록 랜덤 대기
+    human_delay("click")
 
-    # 2. 글쓰기 버튼 클릭: 밴드 내 게시글 작성/업로드 창 열기
-    x_path_click(driver, xpath_dict['글쓰기_1'])
-    time.sleep(random.uniform(1, 3))
+    # 글쓰기 버튼 클릭 + 고민 시간
+    human_delay("thinking")
+    x_path_human_click(driver, xpath_dict['글쓰기_1'])
 
-    # 3. 게시글 내용 입력: 지정 텍스트 파일 내용을 해당 입력창에 send_keys
+    # 텍스트 입력 (느린 타이핑 포함)
     write_text_from_folder(driver, xpath_dict['글쓰기_2'], TXT_DIR)
-    time.sleep(random.uniform(1, 3))
+    human_delay("typing")
 
-    # 4. 이미지 업로드: IMAGE_DIR에서 랜덤 이미지를 선택해 input[type='file']에 첨부
+    # 이미지 업로드 + 대기
     upload_file_from_folder(driver, IMAGE_DIR)
-    time.sleep(random.uniform(1, 3))
+    human_delay("upload")
 
-    # 5. 이미지 첨부 버튼 클릭: 첨부한 파일을 게시글 본문에 실제로 첨부
+    # 이미지 첨부 클릭 (마우스 이동 포함)
+    move_mouse_naturally()
     x_path_click(driver, xpath_dict['이미지첨부'])
-    time.sleep(random.uniform(1, 3))
+    human_delay("click")
 
-    # 6. 게시 버튼 클릭: 게시글+이미지 업로드 최종 제출/게시하기
+    # 게시하기 클릭 + 생각시간
     x_path_click(driver, xpath_dict['이미지게시'])
-    time.sleep(random.uniform(1, 3))
+    human_delay("thinking")
 
-    # 7. 홈으로 복귀: 모든 게시 작업을 마친 뒤 네이버밴드 홈 화면으로 돌아가기
+    # 화면 스크롤 후 홈으로 돌아가기
+    driver.execute_script("window.scrollBy(0, window.innerHeight / 3)")
+    human_delay("scroll")
     x_path_click(driver, xpath_dict['홈'])
-    time.sleep(random.uniform(1, 3))
+    human_delay("scroll")
 
-def roof_bands(
-    driver, 
-    xpath_dict, 
-    BAND_LIST, 
-    TXT_DIR, 
-    IMAGE_DIR, 
-    URL_MODES, 
-    MAX_ERROR_CNT=3
-):
+def perform_logout(driver):
     """
-    밴드 전체 반복 업로드/예외관리 루프 함수 (모듈화 예시)
-    Args:
-        driver: selenium webdriver 객체
-        xpath_dict: 각 버튼 xpath정보
-        BAND_LIST: 전체 밴드 리스트
-        TXT_DIR: 텍스트 파일 디렉토리
-        IMAGE_DIR: 이미지 파일 디렉토리
-        URL_MODES: URL 구분 dict
-        MAX_ERROR_CNT: 연속 오류 허용 횟수
-    Returns:
-        실패한 밴드 리스트
-    """
-    import random, time
-    from selenium.webdriver.common.action_chains import ActionChains
-    from selenium.webdriver.common.alert import Alert
-    from selenium.webdriver.common.keys import Keys
+    안전하게 로그아웃 절차를 수행하는 함수로 분리
 
+    - 순서대로 버튼 클릭
+    - 중간중간 sleep으로 안정성 확보
+    """
+    logger.info("[INFO] 로그아웃 절차 시작")
+    try:
+        x_path_click(driver, xpath_dict['let_me'])
+        human_delay('click')
+        x_path_click(driver, xpath_dict['log_out'])
+        human_delay('click')
+        x_path_click(driver, xpath_dict['log_out_but'])
+        human_delay('click')
+    except Exception as e:
+        logger.error(f"[ERROR] 로그아웃 도중 오류: {e}")
+
+def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=3, mobile_num=None):
     band_list = BAND_LIST.copy()
     random.shuffle(band_list)
     error_cnt = 0
@@ -149,29 +146,44 @@ def roof_bands(
         try:
             process_band(driver, xpath_dict, band, TXT_DIR, IMAGE_DIR)
             error_cnt = 0
-        except Exception as exception:
-            print(f"[WARN] {row+1}번째 밴드 실패: {type(exception)}")
-            error_cnt += 1
-            log_failed_bands.append(band)
-            # 복구 루틴
+
+        except UnexpectedAlertPresentException:
             try:
-                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-                time.sleep(1)
                 alert = Alert(driver)
                 alert.accept()
+                logger.info(f"{row + 1}번째 밴드: alert 자동 닫기 성공")
+                human_delay("thinking")
+            except NoAlertPresentException:
+                logger.warning(f"{row + 1}번째 밴드: alert 존재하지 않음")
             except Exception as e:
-                print("[INFO] 복구 중 추가 에러:", e)
-            # 에러 누적이면 홈 복구
-            if error_cnt >= MAX_ERROR_CNT:
-                print(f"[CRITICAL] {MAX_ERROR_CNT}회 연속 에러! 홈으로 복구합니다.")
-                driver.get(URL_MODES.get("home", "/home"))
-                time.sleep(2)
-                error_cnt = 0
-        finally:
-            band_list.remove(band)
-            rand_sleep = random.randrange(5, 15)
-            print(f'{row+1}번째 upload완료, {len(band_list)}개 밴드 대기 / {rand_sleep}초간 중지')
-            time.sleep(rand_sleep)
+                logger.error(f"{row + 1}번째 밴드: alert 처리 에러: {e}")
+            error_cnt += 1
+            if band not in log_failed_bands:
+                log_failed_bands.append(band)
 
-    print("작업 실패 밴드:", log_failed_bands)
+        except Exception as e:
+            logger.warning(f"{row + 1}번째 밴드 실패: {type(e)} - {e}")
+            error_cnt += 1
+            if band not in log_failed_bands:
+                log_failed_bands.append(band)
+
+        finally:
+            if error_cnt >= MAX_ERROR_CNT:
+                logger.critical(f"연속 {MAX_ERROR_CNT}회 실패 발생! 세션 복구 시도 중")
+                try:
+                    driver.delete_all_cookies()  # 쿠키 삭제
+                    driver.get(NAVERBAND_URL)    # 직접 로그인 URL 사용
+                    human_delay("thinking")
+                    error_cnt = 0
+                except Exception as recover_e:
+                    logger.error(f"세션 복구 실패: {recover_e}")
+                    # 추가 복구 로직 구현 가능
+
+            band_list.remove(band)
+            sleep_time = random.randint(5, 15)
+            logger.info(f"{row + 1}번째 밴드 작업 완료, 남은 밴드: {len(band_list)}, {sleep_time}초 대기 중")
+            time.sleep(sleep_time)
+            move_mouse_naturally()
+
+    logger.info(f"roof_bands 실패 밴드 리스트: {log_failed_bands}")
     return log_failed_bands

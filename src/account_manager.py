@@ -9,7 +9,7 @@ from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from config import COOKIE_DIRNAME, NAVERBAND_LOGIN_URL
-from src.utils import resource_path, ensure_dir, get_cookie_path, x_path_click, x_path_send_keys
+from src.utils import resource_path, ensure_dir, get_cookie_path, x_path_click, x_path_send_keys, logger, move_mouse_naturally
 from resources.xpath_dict import xpath_dict, id_dict
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -41,7 +41,9 @@ def load_cookies(driver: webdriver.Chrome):
         # 쿠키 파일 읽기
         with open(cookie_path, 'rb') as f:
             cookies = pickle.load(f)
-            
+        
+        # 도메인 처리 관련 코드는 현재 주석처리, 추후 프록시/도메인 구축 시 복구
+        """
         # 쿠키 내 모든 domain 종류 추출 (set으로 중복 제거)
         domains = set([c['domain'] for c in cookies])
         
@@ -56,13 +58,13 @@ def load_cookies(driver: webdriver.Chrome):
             for cookie in [c for c in cookies if c['domain'] == domain]:
                 try:
                     driver.add_cookie(cookie)  # 쿠키 추가
-                    print(f"[INFO] 쿠키 추가 성공: {cookie['domain']} ({cookie.get('name')})")
+                    logger.info(f"[INFO] 쿠키 추가 성공: {cookie['domain']} ({cookie.get('name')})")
                 except Exception as ex:
-                    # domain 불일치 등 에러 발생 시 간단 로그 출력
-                    print(f"[WARN] 쿠키 추가 실패(domain={domain}, name={cookie.get('name')}): {ex}")
-
-
-  
+                    logger.warning(f"[WARN] 쿠키 추가 실패(domain={domain}, name={cookie.get('name')}): {ex}")
+        """
+        logger.info("[쿠키 복원] 현재 도메인/프록시 기능이 활성화되지 않아 쿠키 주입은 건너뜁니다. 환경 구축 후 주석 해제 필요.")
+    else:
+        logger.info("[쿠키 복원] 쿠키 파일이 존재하지 않아 건너뜀.")
 
 def login(driver: webdriver.Chrome):
     """
@@ -84,18 +86,21 @@ def login(driver: webdriver.Chrome):
     log_in_xpath = xpath_dict['log_in']
     if driver.find_elements(By.XPATH, log_in_xpath):
         x_path_send_keys(driver, log_in_xpath, account_id)
+        move_mouse_naturally()
         x_path_send_keys(driver, log_in_xpath, Keys.RETURN)
-        print("[INFO] 전화번호 입력 성공")
+        logger.info("[INFO] 전화번호 입력 성공")
     else:
-        print("[WARN] 입력창 없음(자동 인증/사이트 구조 변경 등)")
+        logger.warning("[WARN] 입력창 없음(자동 인증/사이트 구조 변경 등)")
         return
 
     # 4. 비밀번호 입력도 동일하게 처리
     password_xpath = xpath_dict['password']
     if driver.find_elements(By.XPATH, password_xpath):
         x_path_send_keys(driver, password_xpath, id_dict[account_id])
+        move_mouse_naturally()
         x_path_send_keys(driver, password_xpath, Keys.RETURN)
-        print("[INFO] 비밀번호 입력 성공")
+        logger.info("[INFO] 비밀번호 입력 성공")
     else:
-        print("[WARN] 비밀번호 입력창 없음!")
+        logger.warning("[WARN] 비밀번호 입력창 없음!")
         return
+

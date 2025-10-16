@@ -31,7 +31,7 @@ from src.utils import (
 )
 
 from resources.xpath_dict import xpath_dict, id_dict
-
+from src.utils import logger
 
 def fix_chrome_profile_preferences(profile_path: str):
     """
@@ -50,7 +50,7 @@ def fix_chrome_profile_preferences(profile_path: str):
     # 1) Preferences 파일 경로 만들기
     #    크롬 프로필 기본 저장 위치 내 'Default/Preferences' 경로
     prefs_file = os.path.join(profile_path, 'Default', 'Preferences')
-    print(f'크롬 프로필 기본 저장 위치 : {prefs_file}')
+    logger.info(f'크롬 프로필 기본 저장 위치 : {prefs_file}')
 
     # 2) Preferences 파일이 존재하는지 확인
     if os.path.exists(prefs_file):
@@ -78,9 +78,9 @@ def close_restore_popup(driver):
         actions = ActionChains(driver)
         actions.send_keys(Keys.ESCAPE)
         actions.perform()
-        print("[INFO] 복원 팝업 ESC 키 전송으로 닫음")
+        logger.info("[INFO] 복원 팝업 ESC 키 전송으로 닫음")
     except Exception as e:
-        print(f"[WARN] 복원 팝업 닫기 실패: {e}")
+        logger.error(f"[WARN] 복원 팝업 닫기 실패: {e}")
 
 
 
@@ -88,11 +88,11 @@ def handle_alert_and_home(driver, home_url):
     try:
         alert = Alert(driver)
         alert.accept()  # "확인" 버튼 누름
-        print("[INFO] 경고/확인 팝업 자동 확인 완료")
+        logger.info("[INFO] 경고/확인 팝업 자동 확인 완료")
         driver.get(home_url)
-        print(f"[INFO] 홈으로 이동: {home_url}")
+        logger.info(f"[INFO] 홈으로 이동: {home_url}")
     except Exception as e:
-        print(f"[WARN] 팝업 제어 or 홈 이동 실패: {e}")
+        logger.error(f"[WARN] 팝업 제어 or 홈 이동 실패: {e}")
 
 
 def select_mobile_and_get_driver():
@@ -107,7 +107,7 @@ def select_mobile_and_get_driver():
         
     # 2) pyautogui로 전화번호 선택
     mobile_num = pyautogui.confirm('전화번호를 선택하시오', buttons=ids)
-    print(f'선택한 전화번호는 {mobile_num}')
+    logger.info(f'선택한 전화번호는 {mobile_num}')
 
     # 3) 선택된 전화번호에 맞는 크롬 프로필 경로 계산 및 생성
     profile_dir = get_profile_path(mobile_num)
@@ -166,7 +166,7 @@ def select_mobile_and_get_driver():
             """
         })
     except Exception as e:
-        print(f"[WARN] 탐지 JS 우회 코드 주입 실패: {e}")
+        logger.error(f"[WARN] 탐지 JS 우회 코드 주입 실패: {e}")
 
 
     # 8) 드라이버에 선택된 전화번호 정보 저장
@@ -181,6 +181,6 @@ def select_mobile_and_get_driver():
 if __name__ == "__main__":
     # 테스트 실행
     mobile, driver = select_mobile_and_get_driver()
-    print(f"{mobile} 계정으로 브라우저가 실행되었습니다.")
+    logger.info(f"{mobile} 계정으로 브라우저가 실행되었습니다.")
     input("아무 키나 누르면 브라우저를 종료합니다...")
     driver.quit()

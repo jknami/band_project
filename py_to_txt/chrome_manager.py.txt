@@ -31,7 +31,7 @@ from src.utils import (
 )
 
 from resources.xpath_dict import xpath_dict, id_dict
-
+from src.utils import logger
 
 def fix_chrome_profile_preferences(profile_path: str):
     """
@@ -50,7 +50,7 @@ def fix_chrome_profile_preferences(profile_path: str):
     # 1) Preferences 파일 경로 만들기
     #    크롬 프로필 기본 저장 위치 내 'Default/Preferences' 경로
     prefs_file = os.path.join(profile_path, 'Default', 'Preferences')
-    print(f'크롬 프로필 기본 저장 위치 : {prefs_file}')
+    logger.info(f'크롬 프로필 기본 저장 위치 : {prefs_file}')
 
     # 2) Preferences 파일이 존재하는지 확인
     if os.path.exists(prefs_file):
@@ -78,9 +78,9 @@ def close_restore_popup(driver):
         actions = ActionChains(driver)
         actions.send_keys(Keys.ESCAPE)
         actions.perform()
-        print("[INFO] 복원 팝업 ESC 키 전송으로 닫음")
+        logger.info("[INFO] 복원 팝업 ESC 키 전송으로 닫음")
     except Exception as e:
-        print(f"[WARN] 복원 팝업 닫기 실패: {e}")
+        logger.error(f"[WARN] 복원 팝업 닫기 실패: {e}")
 
 
 
@@ -88,11 +88,11 @@ def handle_alert_and_home(driver, home_url):
     try:
         alert = Alert(driver)
         alert.accept()  # "확인" 버튼 누름
-        print("[INFO] 경고/확인 팝업 자동 확인 완료")
+        logger.info("[INFO] 경고/확인 팝업 자동 확인 완료")
         driver.get(home_url)
-        print(f"[INFO] 홈으로 이동: {home_url}")
+        logger.info(f"[INFO] 홈으로 이동: {home_url}")
     except Exception as e:
-        print(f"[WARN] 팝업 제어 or 홈 이동 실패: {e}")
+        logger.error(f"[WARN] 팝업 제어 or 홈 이동 실패: {e}")
 
 
 def select_mobile_and_get_driver():
@@ -107,7 +107,7 @@ def select_mobile_and_get_driver():
         
     # 2) pyautogui로 전화번호 선택
     mobile_num = pyautogui.confirm('전화번호를 선택하시오', buttons=ids)
-    print(f'선택한 전화번호는 {mobile_num}')
+    logger.info(f'선택한 전화번호는 {mobile_num}')
 
     # 3) 선택된 전화번호에 맞는 크롬 프로필 경로 계산 및 생성
     profile_dir = get_profile_path(mobile_num)
@@ -127,11 +127,14 @@ def select_mobile_and_get_driver():
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-software-rasterizer')
 
+    # 탐지 회피 관련 옵션 추가
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
     for opt in DEFAULT_CHROME_OPTIONS:
         options.add_argument(opt)                           # 기본 옵션
     options.add_argument(f"user-agent={USER_AGENT}")       # 사용자 에이전트
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
 
     # 5-1)======비밀번호 저장/자동완성 관리 팝업 사전 차단 ======
     # 이 프리퍼런스(prefs) 옵션을 추가하면 로그인 후 비밀번호 저장 안내창이 더 이상 나타나지 않음
@@ -149,15 +152,21 @@ def select_mobile_and_get_driver():
     # 7) 네이버밴드 로그인 페이지로 자동 이동
     driver.get(NAVERBAND_URL)
 
-    # ====== 탐지 차단을 위한 브라우저 JS 속성 조작 ======
+   # 탐지 JS 속성 우회 강화 (execute_cdp_cmd 사용)
     try:
-        driver.execute_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko']});
-        """)
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {get: () => false});
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['ko-KR', 'ko'],
+                });
+            """
+        })
     except Exception as e:
-        print(f"[WARN] JS 탐지 차단 적용 실패: {e}")
+        logger.error(f"[WARN] 탐지 JS 우회 코드 주입 실패: {e}")
 
 
     # 8) 드라이버에 선택된 전화번호 정보 저장
@@ -172,6 +181,6 @@ def select_mobile_and_get_driver():
 if __name__ == "__main__":
     # 테스트 실행
     mobile, driver = select_mobile_and_get_driver()
-    print(f"{mobile} 계정으로 브라우저가 실행되었습니다.")
+    logger.info(f"{mobile} 계정으로 브라우저가 실행되었습니다.")
     input("아무 키나 누르면 브라우저를 종료합니다...")
     driver.quit()
