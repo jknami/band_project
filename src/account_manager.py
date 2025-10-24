@@ -35,7 +35,8 @@ def load_cookies(driver: webdriver.Chrome):
     
     # 해당 계정의 쿠키 파일 경로 생성 (ex: D:/coding/login/accounts/01075381965/cookies/cookies.pkl)
     cookie_path = os.path.join(get_cookie_path(account_id), "cookies.pkl")
-    
+    logger.info(f'{cookie_path}')
+
     # 쿠키 파일이 존재하면 처리 시작
     if os.path.exists(cookie_path):
         # 쿠키 파일 읽기

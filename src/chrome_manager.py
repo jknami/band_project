@@ -50,7 +50,7 @@ def fix_chrome_profile_preferences(profile_path: str):
     # 1) Preferences 파일 경로 만들기
     #    크롬 프로필 기본 저장 위치 내 'Default/Preferences' 경로
     prefs_file = os.path.join(profile_path, 'Default', 'Preferences')
-    logger.info(f'크롬 프로필 기본 저장 위치 : {prefs_file}')
+    logger.info(f'fix_chrome_profile_preferences()->크롬 프로필 기본 저장 위치 : {prefs_file}')
 
     # 2) Preferences 파일이 존재하는지 확인
     if os.path.exists(prefs_file):
@@ -149,6 +149,10 @@ def select_mobile_and_get_driver():
     driver = webdriver.Chrome(service=service, options=options)
 
     
+    from src.utils import move_mouse_naturally
+    move_mouse_naturally()
+
+
     # 7) 네이버밴드 로그인 페이지로 자동 이동
     driver.get(NAVERBAND_URL)
 
