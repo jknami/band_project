@@ -191,7 +191,7 @@ def get_profile_path(mobile_num: str) -> str:
     """
     profile_path = resource_path(f"accounts/{mobile_num}/{CHROME_PROFILE_DIRNAME}")
     ensure_dir(profile_path)  # 경로가 없으면 자동 생성
-    logger.info(f'profile_dir의 경로는 {profile_path}')
+    logger.info(f'get_profile_paht()->profile_dir의 경로는 {profile_path}')
     return profile_path
 
 
