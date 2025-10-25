@@ -1,7 +1,7 @@
 # 파일: config.py
 # 역할: 전역 설정 및 상수 관리 (mobile_num별 크롬 프로필 지원)
 
-# 로그인 페이지 URL
+# 네이버밴드 페이지 URL
 NAVERBAND_URL = "https://www.band.us/home"
 NAVERBAND_LOGIN_URL = "https://auth.band.us/phone_login?keep_login=false"
 
@@ -63,17 +63,9 @@ USER_AGENT = (
     "Chrome/115.0.0.0 Safari/537.36"
 )
 
-# 프록시 서버 리스트
-# 실제 운영환경에 맞게 변경 또는 클라우드/외부 서버 IP 입력
-PROXY_LIST = [
-    "http://proxy1.example.com:8080",
-    "http://proxy2.example.com:8080",
-    # 추가 프록시 주소 필요시 계속 나열
-]
-
-# 전화번호별 프록시 할당 매핑 (필요시 수동 조정 가능)
-MOBILE_PROXY_MAPPING = {
-    "01012345678": PROXY_LIST[0],
-    "01098765432": PROXY_LIST[1],
-    # 나머지 계정 번호에 맞춤 할당
+# 계정별 User-Agent 매핑 (Windows 11 + 탐지 회피를 위한 크롬 버전 다양화)
+MOBILE_USER_AGENT_MAPPING = {
+    "01075381965": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.123 Safari/537.36",
+    "01020664732": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.7050.110 Safari/537.36",
+    "01027851965": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7500.95 Safari/537.36",
 }

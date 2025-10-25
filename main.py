@@ -53,6 +53,7 @@ def main():
     close_time = time.strftime('%p %I시%M분%S초', time.localtime())
     logger.info('이 project는 {}에 완료하여 logout하였습니다'.format(close_time))
     save_cookies(driver)
+    
     driver.quit()
 
 

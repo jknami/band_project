@@ -1,90 +1,252 @@
 # 파일: src/account_manager.py
-# 역할: 여러 계정의 쿠키 저장·로드 및 로그인 처리
-# 수정: driver.selected_mobile 사용, id_dict에서 비밀번호 로드, xpath_dict 사용
+# 역할: 여러 계정의 쿠키 저장·로드 및 로그인 처리 (2차 인증 자동 처리 포함)
 
 import os
-import pickle
+import json
 import time
-from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from config import COOKIE_DIRNAME, NAVERBAND_LOGIN_URL
-from src.utils import resource_path, ensure_dir, get_cookie_path, x_path_click, x_path_send_keys, logger, move_mouse_naturally
-from resources.xpath_dict import xpath_dict, id_dict
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import WebDriverException, NoSuchElementException
 
-def save_cookies(driver: webdriver.Chrome):
+from config import NAVERBAND_LOGIN_URL
+from src.utils import get_cookie_path, x_path_send_keys, logger, move_mouse_naturally
+from resources.xpath_dict import xpath_dict, id_dict
+
+
+def save_cookies(driver):
     """
-    현재 브라우저 세션의 쿠키를 account_id별 폴더에 저장합니다.
+    현재 브라우저 세션의 쿠키를 account_id별 폴더에 JSON 형식으로 저장합니다.
+    
+    주의: 이 함수는 login() 함수 안에서 호출되지 않습니다!
+         main.py에서 모든 자동화 작업(밴드 순회 등)이 완료된 후 호출됩니다.
     """
     account_id = driver.selected_mobile
     cookie_dir = get_cookie_path(account_id)
-    cookie_path = os.path.join(cookie_dir, "cookies.pkl")
-    with open(cookie_path, 'wb') as f:
-        pickle.dump(driver.get_cookies(), f)
-
-def load_cookies(driver: webdriver.Chrome):
-    """
-    계정별로 저장된 쿠키(cookies.pkl)를 읽어서
-    쿠키의 domain에 따라 브라우저를 해당 도메인 페이지에 이동시킨 뒤
-    알맞은 쿠키만 add_cookie로 추가합니다.
-    도메인 불일치(InvalidCookieDomainException) 방지를 위한 확장 패턴입니다.
-    """
-    # 브라우저가 어떤 계정(전화번호)으로 실행 중인지 가져옴
-    account_id = driver.selected_mobile
+    cookie_path = os.path.join(cookie_dir, "cookies.json")
     
-    # 해당 계정의 쿠키 파일 경로 생성 (ex: D:/coding/login/accounts/01075381965/cookies/cookies.pkl)
-    cookie_path = os.path.join(get_cookie_path(account_id), "cookies.pkl")
-    logger.info(f'{cookie_path}')
+    try:
+        cookies = driver.get_cookies()
+        with open(cookie_path, 'w', encoding='utf-8') as f:
+            json.dump(cookies, f, ensure_ascii=False, indent=4)
+        logger.info(f"[INFO] 쿠키 저장 완료: {cookie_path}")
+    except Exception as e:
+        logger.error(f"[ERROR] 쿠키 저장 실패: {e}")
 
-    # 쿠키 파일이 존재하면 처리 시작
-    if os.path.exists(cookie_path):
-        # 쿠키 파일 읽기
-        with open(cookie_path, 'rb') as f:
-            cookies = pickle.load(f)
-        
-        # 도메인 처리 관련 코드는 현재 주석처리, 추후 프록시/도메인 구축 시 복구
-        """
-        # 쿠키 내 모든 domain 종류 추출 (set으로 중복 제거)
-        domains = set([c['domain'] for c in cookies])
-        
-        # domain별로 반복하며,
-        for domain in domains:
-            # 브라우저를 해당 도메인 홈으로 이동 (ex: 'www.band.us' -> 'https://www.band.us/')
-            url = f"https://{domain.lstrip('.')}/"
-            driver.get(url)
-            time.sleep(1)  # 페이지가 완전히 열린 뒤 처리
-            
-            # 현재 도메인에 해당하는 쿠키만 찾아서 추가
-            for cookie in [c for c in cookies if c['domain'] == domain]:
-                try:
-                    driver.add_cookie(cookie)  # 쿠키 추가
-                    logger.info(f"[INFO] 쿠키 추가 성공: {cookie['domain']} ({cookie.get('name')})")
-                except Exception as ex:
-                    logger.warning(f"[WARN] 쿠키 추가 실패(domain={domain}, name={cookie.get('name')}): {ex}")
-        """
-        logger.info("[쿠키 복원] 현재 도메인/프록시 기능이 활성화되지 않아 쿠키 주입은 건너뜁니다. 환경 구축 후 주석 해제 필요.")
-    else:
-        logger.info("[쿠키 복원] 쿠키 파일이 존재하지 않아 건너뜀.")
 
-def login(driver: webdriver.Chrome):
+def load_cookies(driver, max_retries=1):
     """
-    네이버밴드 계정 자동 로그인 (쿠키 복원, 입력창 확인, 자동 입력).
-    쿠키 저장은 자동화 전체 작업이 끝난 뒤(로그아웃 후)에만 수행!
+    계정별로 저장된 JSON 쿠키를 불러와 현재 세션에 적용합니다.
+    
+    중요: 네이버밴드는 쿠키 복원 실패해도 1차 로그인을 진행하므로
+         재시도 로직은 불필요합니다. 단순히 시도만 하고 결과를 반환합니다.
+    
+    Args:
+        driver: 웹드라이버 객체
+        max_retries: 재시도 횟수 (기본 1, 실제로는 재시도 안 함)
+    
+    Returns:
+        bool: 쿠키 로드 성공 여부
     """
     account_id = driver.selected_mobile
-    wait = WebDriverWait(driver, 10)
+    cookie_dir = get_cookie_path(account_id)
+    cookie_path = os.path.join(cookie_dir, "cookies.json")
+    
+    # 1. 쿠키 파일 존재 여부 확인
+    if not os.path.exists(cookie_path):
+        logger.info(f"[INFO] 쿠키 파일 없음: {cookie_path}")
+        logger.info("[INFO] 첫 로그인이거나 쿠키가 삭제된 상태입니다. 1차 로그인을 진행합니다.")
+        return False
+    
+    try:
+        # 2. 쿠키 파일 읽기
+        with open(cookie_path, 'r', encoding='utf-8') as f:
+            cookies = json.load(f)
+        
+        if not cookies:
+            logger.warning("[WARN] 쿠키 파일이 비어있습니다.")
+            logger.info("[INFO] 1차 로그인을 진행합니다.")
+            return False
+        
+        # 3. 쿠키 드라이버에 추가
+        added_count = 0
+        failed_count = 0
+        
+        for cookie in cookies:
+            try:
+                if 'domain' in cookie and cookie['domain'].lstrip('.') in driver.current_url:
+                    driver.add_cookie(cookie)
+                    added_count += 1
+            except WebDriverException as e:
+                failed_count += 1
+                logger.warning(f"[WARN] 쿠키 추가 실패 (무시): {e}")
+                pass
+        
+        # 4. 쿠키 추가 결과 로그
+        logger.info(f"[INFO] 쿠키 추가 완료: 성공 {added_count}개, 실패 {failed_count}개")
+        
+        if added_count == 0:
+            logger.warning("[WARN] 추가된 쿠키가 없습니다. 1차 로그인을 진행합니다.")
+            return False
+        
+        # 5. 페이지 새로고침으로 쿠키 적용
+        driver.refresh()
+        logger.info(f"[INFO] 쿠키 복원 완료: {cookie_path}")
+        logger.info("[INFO] 쿠키 기반 자동 로그인을 시도합니다.")
+        
+        return True
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"[ERROR] 쿠키 파일 형식 오류: {e}")
+        logger.info("[INFO] 손상된 쿠키 파일입니다. 1차 로그인을 진행합니다.")
+        return False
+        
+    except Exception as e:
+        logger.error(f"[ERROR] 쿠키 로드 실패: {e}")
+        logger.info("[INFO] 쿠키 복원 실패. 1차 로그인을 진행합니다.")
+        return False
 
-    # 1. 쿠키 인증 복원(도메인별 add_cookie)
+
+
+def check_2fa_required(driver):
+    """
+    2차 인증 페이지가 나타났는지 확인합니다.
+    
+    Returns:
+        bool: 2차 인증이 필요한 경우 True
+    """
+    try:
+        current_url = driver.current_url
+        
+        # 1. URL 패턴으로 2차 인증 페이지 확인
+        if "validation_welcome" in current_url or "validation" in current_url:
+            logger.info("[INFO] 2차 인증 페이지 URL 감지: " + current_url)
+            return True
+        
+        # 2. xpath_dict에서 2차 인증 관련 XPath 가져오기
+        two_fa_keys = ['sms_but', 'sms_input_space', 'sms_input_submit']
+        
+        for key in two_fa_keys:
+            xpath = xpath_dict.get(key)  # XPath 가져오기
+            if xpath and driver.find_elements(By.XPATH, xpath):
+                logger.info(f"[INFO] 2차 인증 요소 감지: {key} ({xpath})")
+                return True
+        
+        return False
+        
+    except Exception as e:
+        logger.warning(f"[WARN] 2차 인증 확인 중 오류: {e}")
+        return False
+
+
+def handle_2fa_authentication(driver):
+    """
+    2차 인증을 자동으로 처리합니다.
+    
+    처리 순서:
+    1. '문자로 받기' 버튼 클릭
+    2. 사용자에게 인증번호 입력 요청 (input)
+    3. 인증번호 입력창에 입력
+    4. '인증번호 확인' 버튼 클릭
+    
+    Returns:
+        bool: 2차 인증 처리 성공 여부
+    """
+    try:
+        # 1. '문자로 받기' 버튼 클릭
+        sms_button_xpath = xpath_dict.get('sms_but')
+        if not sms_button_xpath:
+            logger.error("[ERROR] XPath 'sms_but'이 정의되지 않았습니다!")
+            return False
+            
+        if driver.find_elements(By.XPATH, sms_button_xpath):
+            x_path_send_keys(driver, sms_button_xpath, Keys.RETURN)  # 버튼 클릭
+            logger.info("[INFO] '문자로 받기' 버튼 클릭 완료")
+            time.sleep(3)  # 문자 전송 대기
+        else:
+            logger.warning("[WARN] '문자로 받기' 버튼을 찾을 수 없습니다.")
+            return False
+        
+        # 2. 사용자에게 인증번호 입력 요청
+        auth_code = input("[입력 필요] 핸드폰으로 전송된 인증번호를 입력하세요: ")
+        if not auth_code:
+            logger.error("[ERROR] 인증번호가 입력되지 않았습니다!")
+            return False
+        
+        logger.info(f"[INFO] 입력된 인증번호: {auth_code}")
+        
+        # 3. 인증번호 입력창에 입력
+        code_input_xpath = xpath_dict.get('sms_input_space')
+        if not code_input_xpath:
+            logger.error("[ERROR] XPath '인증번호입력창'이 정의되지 않았습니다!")
+            return False
+            
+        if driver.find_elements(By.XPATH, code_input_xpath):
+            x_path_send_keys(driver, code_input_xpath, auth_code)  # 인증번호 입력
+            logger.info("[INFO] 인증번호 입력 완료")
+            time.sleep(1)
+        else:
+            logger.warning("[WARN] 인증번호 입력창을 찾을 수 없습니다.")
+            return False
+        
+        # 4. '인증번호 확인' 버튼 클릭
+        confirm_button_xpath = xpath_dict.get('sms_input_submit')
+        if not confirm_button_xpath:
+            logger.error("[ERROR] XPath '인증번호확인but'이 정의되지 않았습니다!")
+            return False
+            
+        if driver.find_elements(By.XPATH, confirm_button_xpath):
+            x_path_send_keys(driver, confirm_button_xpath, Keys.RETURN)  # 버튼 클릭
+            logger.info("[INFO] '인증번호 확인' 버튼 클릭 완료")
+            time.sleep(3)  # 인증 처리 대기
+        else:
+            logger.warning("[WARN] '인증번호 확인' 버튼을 찾을 수 없습니다.")
+            return False
+        
+        # 5. 홈 화면 진입 확인
+        if "band.us/home" in driver.current_url or "band.us/band" in driver.current_url:
+            logger.info("[INFO] 2차 인증 완료! 홈 화면 진입 성공")
+            return True
+        else:
+            logger.warning("[WARN] 2차 인증 후 홈 화면 진입 실패")
+            return False
+            
+    except Exception as e:
+        logger.error(f"[ERROR] 2차 인증 처리 중 오류 발생: {e}")
+        return False
+
+
+def login(driver):
+    """
+    네이버밴드 계정 자동 로그인 (쿠키 복원, 입력창 확인, 자동 입력, 2차 인증 자동 처리).
+    
+    중요: 쿠키 저장은 이 함수에서 하지 않습니다!
+         main.py에서 모든 자동화 작업이 끝난 후 save_cookies()를 호출합니다.
+    
+    핵심 흐름:
+    1. 쿠키 복원 시도 (성공/실패 상관없이 다음 단계 진행)
+    2. 무조건 로그인 페이지로 이동
+    3. ID/PW 입력 (1차 로그인 - 무조건 통과)
+    4. 2차 인증 필요 여부 확인
+       - 필요하면: 자동으로 문자 인증 처리 (사용자 입력 받음)
+       - 불필요하면: 바로 완료
+    5. 로그인 완료 (쿠키 저장은 하지 않음!)
+    """
+    account_id = driver.selected_mobile
+
+    # 1. 쿠키 인증 복원(도메인별 add_cookie) - 시도만 함, 실패해도 계속 진행
     load_cookies(driver)
     time.sleep(1)
 
-    # 2. 로그인 페이지로 이동
+    # 2. 로그인 페이지로 이동 (쿠키 복원 성공 여부와 상관없이 무조건 진행)
     driver.get(NAVERBAND_LOGIN_URL)
     time.sleep(2)
 
     # 3. 전화번호 입력창(XPath) 실존 체크
-    log_in_xpath = xpath_dict['log_in']
+    log_in_xpath = xpath_dict.get('log_in')
+    if not log_in_xpath:
+        logger.error("[ERROR] XPath 'log_in'이 정의되지 않았습니다!")
+        return False
+        
     if driver.find_elements(By.XPATH, log_in_xpath):
         x_path_send_keys(driver, log_in_xpath, account_id)
         move_mouse_naturally()
@@ -92,16 +254,42 @@ def login(driver: webdriver.Chrome):
         logger.info("[INFO] 전화번호 입력 성공")
     else:
         logger.warning("[WARN] 입력창 없음(자동 인증/사이트 구조 변경 등)")
-        return
+        return False
 
     # 4. 비밀번호 입력도 동일하게 처리
-    password_xpath = xpath_dict['password']
+    password_xpath = xpath_dict.get('password')
+    if not password_xpath:
+        logger.error("[ERROR] XPath 'password'가 정의되지 않았습니다!")
+        return False
+        
     if driver.find_elements(By.XPATH, password_xpath):
         x_path_send_keys(driver, password_xpath, id_dict[account_id])
         move_mouse_naturally()
         x_path_send_keys(driver, password_xpath, Keys.RETURN)
         logger.info("[INFO] 비밀번호 입력 성공")
+        time.sleep(3)  # 1차 로그인 처리 대기
     else:
         logger.warning("[WARN] 비밀번호 입력창 없음!")
-        return
+        return False
 
+    # 여기까지 1차 로그인(ID/PW) 완료
+    # 네이버밴드는 쿠키 복원 실패해도 1차 로그인은 항상 진행
+
+    # 5. 2차 인증 필요 여부 확인
+    if check_2fa_required(driver):
+        logger.info("[INFO] 2차 인증이 필요합니다. 자동 처리를 시작합니다...")
+        
+        if not handle_2fa_authentication(driver):
+            logger.error("[ERROR] 2차 인증 처리 실패!")
+            return False
+        
+        logger.info("[INFO] 2차 인증 완료!")
+    else:
+        logger.info("[INFO] 2차 인증 없이 로그인 완료")
+
+    # 로그인 완료!
+    # 쿠키 저장은 여기서 하지 않음!
+    # main.py에서 모든 자동화 작업 완료 후 save_cookies() 호출
+    
+    logger.info("[INFO] 로그인 완료! (쿠키는 자동화 작업 종료 후 저장됩니다)")
+    return True
