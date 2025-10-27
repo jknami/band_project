@@ -19,30 +19,9 @@ import pyautogui
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from selenium.webdriver.remote.webelement import WebElement
+from resources.xpath_dict import xpath_dict
 
-
-'''
-get_root_dir()는 PyInstaller로 exe 파일을 만들 때도 정상적으로 리소스 및 경로를 찾기 위해 만들어진 유틸 함수입니다.
-
-
-요약 설명
-일반 파이썬 개발/실행 환경
-
-
-.py 파일 실행 시 프로젝트 루트(상위 경로)를 동적으로 반환합니다.
-
-
-PyInstaller 배포(.exe) 환경
-
-
-PyInstaller로 패키징된 실행파일(exe)에서는 내부적으로 리소스(텍스트, 이미지 등)를 임시 폴더(sys._MEIPASS)에 풀어주기 때문에,
-
-
-이 경로(sys._MEIPASS)를 반환하여 exe에서도 리소스 경로가 깨지지 않고 동작하도록 해줍니다.
-
-
-즉, 개발 중이든, exe로 만든 후든 코드와 리소스를 구분하지 않고 안정적으로 접근할 수 있게 하는 역할입니다.
-'''
 def get_root_dir() -> str:
     """
     프로젝트의 최상위(root) 디렉터리 경로를 반환합니다.
@@ -216,7 +195,7 @@ ensure_dir("dist")
 
 
 ##############################
-# human acction 
+# Human-like Delays and Mouse Movements
 ##############################
 def random_sleep(min_sec=0.5, max_sec=1.5):
     """
@@ -267,7 +246,7 @@ def move_mouse_naturally(target_x=None, target_y=None):
         target_y = random.randint(200, 600)
     duration = random.uniform(0.4, 1.5)
     pyautogui.moveTo(target_x, target_y, duration=duration)
-    logger.info(f"[INFO] 마우스 자연 이동: ({target_x}, {target_y}), duration: {duration:.2f}s")
+    # logger.info(f"[INFO] 마우스 자연 이동: ({target_x}, {target_y}), duration: {duration:.2f}s")
 
 
 def focus_window(title_substring):
@@ -287,11 +266,15 @@ def focus_window(title_substring):
             time.sleep(0.5)
         if not win.isMaximized:
             win.maximize()
-        logger.info(f"[INFO] 창 포커스 및 최대화: {win.title}")
+        # logger.info(f"[INFO] 창 포커스 및 최대화: {win.title}")
     else:
         logger.warning(f"[WARN] 창 '{title_substring}' 찾지 못함")
 
 
+
+# ===================
+# Typing Simulation
+# ===================
 # 인접 키보드 배열. 오타가 날 때 인접한 키 중 하나를 입력
 adjacent_keys = {
     "a": "qsxz", "b": "vhn", "c": "xdfv", "d": "serfcx", "e": "wsdr", "f": "drtgvc",
@@ -307,7 +290,7 @@ def get_typo_char(c):
     return random.choice(adjacent_keys.get(c, "abcdefghijklmnopqrstuvwxyz"))
 
 
-from selenium.webdriver.remote.webelement import WebElement
+
 def realistic_typing(element: WebElement, text: str, typo_prob=0.016):
     """
     실제 사람처럼 타이핑하는 함수.
@@ -369,9 +352,9 @@ def realistic_typing(element: WebElement, text: str, typo_prob=0.016):
 
 
 
-##############################
-# Selenium XPATH 핸들링 유틸리티
-##############################
+# ===================
+# Selenium Utility Functions
+# ==================
 def save_error_screenshot(driver, filename_prefix="error"):
     """
     Selenium WebDriver 스크린샷을 'logs/screenshots' 폴더에 저장
@@ -391,6 +374,31 @@ def save_error_screenshot(driver, filename_prefix="error"):
 
     driver.save_screenshot(filepath)
     logger.info(f"[INFO] 에러 스크린샷 저장: {filepath}")
+
+def go_home(driver, xpath_dict, wait_time=10):
+    """
+    xpath_dict 내 '홈' 키의 XPath를 활용해 네이버 밴드 홈 화면으로 강제 복귀하는 함수
+    
+    Args:
+        driver: Selenium WebDriver 객체
+        xpath_dict: XPath가 정의된 딕셔너리 (resources/xpath_dict.py)
+        wait_time: 엘리먼트 대기 시간 (초)
+    
+    동작:
+        - '홈' 버튼이 클릭 가능할 때까지 기다림
+        - 클릭 후 약간 대기
+        - 예외 발생 시 에러 로깅
+    """
+    try:
+        wait = WebDriverWait(driver, wait_time)
+        wait.until(EC.element_to_be_clickable((By.XPATH, xpath_dict['홈'])))
+        home_button = driver.find_element(By.XPATH, xpath_dict['홈'])
+        home_button.click()
+        logger.info("[복구] 홈 버튼 클릭하여 강제 복귀 성공")
+        time.sleep(2)  # 페이지 로딩 대기
+    except Exception as e:
+        logger.error(f"[복구 실패] 홈 버튼 클릭 실패: {e}")
+        # 추가 복구 로직을 여기에 작성 가능
 
 
 def x_path_click(driver, xpath: str, wait_time=10):
@@ -435,6 +443,7 @@ def x_path_click(driver, xpath: str, wait_time=10):
     except Exception as e:
         logger.error(f"[ERROR] 알 수 없는 예외: {e}")
         save_error_screenshot(driver, "xpath_click_unknown_error")
+        # 홈 복귀는 상위에서 처리하도록 분리
         raise
 
 

@@ -19,36 +19,57 @@ from resources.xpath_dict import xpath_dict
 from src.utils import realistic_typing, safe_xpath_click, x_path_human_click
 
 def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, do_clear=True):
+    """
+    지정된 폴더 내 랜덤 텍스트 파일에서 내용을 읽어 해당 xpath 텍스트 입력란에 현실적인 타이핑 패턴으로 자동 입력합니다.
+
+    Args:
+        driver: Selenium WebDriver 객체
+        xpath: 텍스트 입력란 xpath
+        folder_path: 텍스트 파일이 위치한 폴더 경로
+        wait_time: 요소 대기 시간(초), 기본 10초
+        do_clear: 기존 텍스트를 지울지 여부, 기본 True
+
+    Raises:
+        UnicodeDecodeError: 텍스트 인코딩 실패 시 발생
+        Exception: 그 외 예외 발생 시 로그 및 스크린샷 후 예외 재발생
+    """
     file = get_random_file(folder_path)
     try:
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         element = driver.find_element(By.XPATH, xpath)
+
         if do_clear:
-            try: element.clear()
-            except Exception: pass
-        human_delay('click')
+            try:
+                element.clear()
+            except Exception as e:
+                logger.warning(f"[WARN] 텍스트 입력 전 클리어 실패: {e}")
+
+        human_delay('click')  # 클릭 전 자연 딜레이 삽입
         element.click()
-        time.sleep(random.uniform(0.3, 1.1))
+        time.sleep(random.uniform(0.3, 1.1))  # 클릭 후 자연스러운 대기
 
         text_content = None
-        for enc in ('utf-8', 'utf-8-sig', 'cp949'):
+        for encoding in ('utf-8', 'utf-8-sig', 'cp949'):
             try:
-                with open(file, 'r', encoding=enc) as f:
+                with open(file, 'r', encoding=encoding) as f:
                     text_content = f.read()
                 break
             except UnicodeDecodeError:
                 continue
+
         if text_content is None:
-            raise UnicodeDecodeError(f"인코딩 모든 시도가 실패했습니다: {file}")
+            raise UnicodeDecodeError(f"모든 인코딩 시도 실패: {file}")
+
         text_content = text_content.strip()
         if len(text_content) > 1600:
             text_content = text_content[:random.randint(1200, 1500)]
 
         realistic_typing(element, text_content)
-        logger.info("[INFO] 본문 자동 입력 성공 (현실적 패턴)")
+        logger.info(f"[INFO] 본문 자동 입력 성공: {file}")
 
     except Exception as e:
+        # 에러 시 스크린샷과 로그 기록
         driver.save_screenshot("input_error_debug.png")
         logger.error(f"[ERROR] 본문 입력 실패: {file}\n에러: {e}")
         raise
@@ -136,6 +157,7 @@ def perform_logout(driver):
     except Exception as e:
         logger.error(f"[ERROR] 로그아웃 도중 오류: {e}")
 
+from src.utils import go_home
 def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=3, mobile_num=None):
     band_list = BAND_LIST.copy()
     random.shuffle(band_list)
@@ -144,6 +166,7 @@ def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=
 
     for row, band in enumerate(band_list[:]):
         try:
+            # process_band 내에서 복구는 하지 않고, 예외를 상위로 던짐
             process_band(driver, xpath_dict, band, TXT_DIR, IMAGE_DIR)
             error_cnt = 0
 
@@ -161,23 +184,28 @@ def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=
             if band not in log_failed_bands:
                 log_failed_bands.append(band)
 
+            # 홈 복귀 처리 - 상위에서 관리
+            try:
+                go_home(driver, xpath_dict)
+            except Exception as recover_e:
+                logger.error(f"[복구 실패] 홈 복귀 실패: {recover_e}")
+
         except Exception as e:
             logger.warning(f"{row + 1}번째 밴드 실패: {type(e)} - {e}")
             error_cnt += 1
             if band not in log_failed_bands:
                 log_failed_bands.append(band)
 
+            try:
+                go_home(driver, xpath_dict)
+            except Exception as recover_e:
+                logger.error(f"[복구 실패] 홈 복귀 실패: {recover_e}")
+
         finally:
             if error_cnt >= MAX_ERROR_CNT:
-                logger.critical(f"연속 {MAX_ERROR_CNT}회 실패 발생! 세션 복구 시도 중")
-                try:
-                    driver.delete_all_cookies()  # 쿠키 삭제
-                    driver.get(NAVERBAND_URL)    # 직접 로그인 URL 사용
-                    human_delay("thinking")
-                    error_cnt = 0
-                except Exception as recover_e:
-                    logger.error(f"세션 복구 실패: {recover_e}")
-                    # 추가 복구 로직 구현 가능
+                logger.critical(f"연속 {MAX_ERROR_CNT}회 실패 발생! 관리자 개입 필요")
+                # 필요시 관리자 알림 콜 등 추가 가능
+                error_cnt = 0
 
             band_list.remove(band)
             sleep_time = random.randint(5, 15)
@@ -187,3 +215,4 @@ def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=
 
     logger.info(f"roof_bands 실패 밴드 리스트: {log_failed_bands}")
     return log_failed_bands
+
