@@ -117,12 +117,12 @@ def check_2fa_required(driver):
     try:
         current_url = driver.current_url
         
-        # 1. URL 패턴으로 2차 인증 페이지 확인
+        # 1. URL에 2차 인증 관련 페이지 패턴 포함 여부 체크
         if "validation_welcome" in current_url or "validation" in current_url:
             logger.info("[INFO] 2차 인증 페이지 URL 감지: " + current_url)
             return True
         
-        # 2. xpath_dict에서 2차 인증 관련 XPath 가져오기
+        # 2. XPath 기반 2차 인증 요소 존재 여부 확인
         two_fa_keys = ['sms_but', 'sms_input_space', 'sms_input_submit']
         
         for key in two_fa_keys:
@@ -140,156 +140,148 @@ def check_2fa_required(driver):
 
 def handle_2fa_authentication(driver):
     """
-    2차 인증을 자동으로 처리합니다.
-    
-    처리 순서:
+    2차 인증을 자동 처리합니다.
+
+    단계별 작업:
     1. '문자로 받기' 버튼 클릭
-    2. 사용자에게 인증번호 입력 요청 (input)
-    3. 인증번호 입력창에 입력
-    4. '인증번호 확인' 버튼 클릭
-    
+    2. 사용자 인증번호 입력 요청
+    3. 인증번호 입력창에 입력 처리
+    4. '다시 묻지 않기' 선택 (선택적)
+    5. '인증번호 확인' 버튼 클릭
+    6. 인증 완료 후 홈 화면 진입 확인
+
     Returns:
-        bool: 2차 인증 처리 성공 여부
+        bool: 인증 성공 여부
     """
     try:
-        # 1. '문자로 받기' 버튼 클릭
         sms_button_xpath = xpath_dict.get('sms_but')
         if not sms_button_xpath:
-            logger.error("[ERROR] XPath 'sms_but'이 정의되지 않았습니다!")
+            logger.error("[ERROR] XPath 'sms_but' 정의 누락")
             return False
-            
+
         if driver.find_elements(By.XPATH, sms_button_xpath):
-            x_path_send_keys(driver, sms_button_xpath, Keys.RETURN)  # 버튼 클릭
+            x_path_send_keys(driver, sms_button_xpath, Keys.RETURN)
             logger.info("[INFO] '문자로 받기' 버튼 클릭 완료")
-            time.sleep(3)  # 문자 전송 대기
+            time.sleep(3)
         else:
-            logger.warning("[WARN] '문자로 받기' 버튼을 찾을 수 없습니다.")
+            logger.warning("[WARN] '문자로 받기' 버튼 미발견")
             return False
-        
-        # 2. 사용자에게 인증번호 입력 요청
-        auth_code = input("[입력 필요] 핸드폰으로 전송된 인증번호를 입력하세요: ")
+
+        auth_code = input("[입력 필요] 핸드폰으로 전송된 인증번호 입력: ")
         if not auth_code:
-            logger.error("[ERROR] 인증번호가 입력되지 않았습니다!")
+            logger.error("[ERROR] 인증번호 미입력")
             return False
-        
+
         logger.info(f"[INFO] 입력된 인증번호: {auth_code}")
-        
-        # 3. 인증번호 입력창에 입력
+
         code_input_xpath = xpath_dict.get('sms_input_space')
         if not code_input_xpath:
-            logger.error("[ERROR] XPath '인증번호입력창'이 정의되지 않았습니다!")
+            logger.error("[ERROR] XPath 'sms_input_space' 정의 누락")
             return False
-            
+
         if driver.find_elements(By.XPATH, code_input_xpath):
-            x_path_send_keys(driver, code_input_xpath, auth_code)  # 인증번호 입력
+            x_path_send_keys(driver, code_input_xpath, auth_code)
             logger.info("[INFO] 인증번호 입력 완료")
             time.sleep(1)
         else:
-            logger.warning("[WARN] 인증번호 입력창을 찾을 수 없습니다.")
+            logger.warning("[WARN] 인증번호 입력창 미발견")
             return False
-        
-        # 4. '인증번호 확인' 버튼 클릭
+
+        dont_ask_again_xpath = xpath_dict.get('다시묻지않기')
+        if dont_ask_again_xpath and driver.find_elements(By.XPATH, dont_ask_again_xpath):
+            try:
+                x_path_send_keys(driver, dont_ask_again_xpath, Keys.SPACE)
+                logger.info("[INFO] '다시 묻지 않기' 체크 완료")
+                time.sleep(0.5)
+            except Exception as e:
+                logger.warning(f"[WARN] '다시 묻지 않기' 클릭 오류: {e}")
+
         confirm_button_xpath = xpath_dict.get('sms_input_submit')
         if not confirm_button_xpath:
-            logger.error("[ERROR] XPath '인증번호확인but'이 정의되지 않았습니다!")
+            logger.error("[ERROR] XPath 'sms_input_submit' 정의 누락")
             return False
-            
+
         if driver.find_elements(By.XPATH, confirm_button_xpath):
-            x_path_send_keys(driver, confirm_button_xpath, Keys.RETURN)  # 버튼 클릭
+            x_path_send_keys(driver, confirm_button_xpath, Keys.RETURN)
             logger.info("[INFO] '인증번호 확인' 버튼 클릭 완료")
-            time.sleep(3)  # 인증 처리 대기
+            time.sleep(3)
         else:
-            logger.warning("[WARN] '인증번호 확인' 버튼을 찾을 수 없습니다.")
+            logger.warning("[WARN] '인증번호 확인' 버튼 미발견")
             return False
-        
-        # 5. 홈 화면 진입 확인
+
         if "band.us/home" in driver.current_url or "band.us/band" in driver.current_url:
-            logger.info("[INFO] 2차 인증 완료! 홈 화면 진입 성공")
+            logger.info("[INFO] 2차 인증 완료, 홈 화면 진입 성공")
             return True
         else:
             logger.warning("[WARN] 2차 인증 후 홈 화면 진입 실패")
             return False
-            
+
     except Exception as e:
-        logger.error(f"[ERROR] 2차 인증 처리 중 오류 발생: {e}")
+        logger.error(f"[ERROR] 2차 인증 처리 중 예외 발생: {e}")
         return False
 
 
 def login(driver):
     """
-    네이버밴드 계정 자동 로그인 (쿠키 복원, 입력창 확인, 자동 입력, 2차 인증 자동 처리).
-    
-    중요: 쿠키 저장은 이 함수에서 하지 않습니다!
-         main.py에서 모든 자동화 작업이 끝난 후 save_cookies()를 호출합니다.
-    
-    핵심 흐름:
-    1. 쿠키 복원 시도 (성공/실패 상관없이 다음 단계 진행)
-    2. 무조건 로그인 페이지로 이동
-    3. ID/PW 입력 (1차 로그인 - 무조건 통과)
-    4. 2차 인증 필요 여부 확인
-       - 필요하면: 자동으로 문자 인증 처리 (사용자 입력 받음)
-       - 불필요하면: 바로 완료
-    5. 로그인 완료 (쿠키 저장은 하지 않음!)
+    네이버밴드 로그인 수행
+
+    흐름:
+    1. 쿠키 복원 시도 (실패해도 진행)
+    2. 로그인 페이지 이동 및 전화번호 입력
+    3. 비밀번호 입력
+    4. 2차 인증 필요 시 자동 처리
+    5. 로그인 완료
+
+    쿠키 저장은 로그인 함수 외부에서 진행
     """
     account_id = driver.selected_mobile
 
-    # 1. 쿠키 인증 복원(도메인별 add_cookie) - 시도만 함, 실패해도 계속 진행
+    # 쿠키 복원 시도
     load_cookies(driver)
     time.sleep(1)
 
-    # 2. 로그인 페이지로 이동 (쿠키 복원 성공 여부와 상관없이 무조건 진행)
+    # 로그인 페이지 접속
     driver.get(NAVERBAND_LOGIN_URL)
     time.sleep(2)
 
-    # 3. 전화번호 입력창(XPath) 실존 체크
     log_in_xpath = xpath_dict.get('log_in')
     if not log_in_xpath:
-        logger.error("[ERROR] XPath 'log_in'이 정의되지 않았습니다!")
+        logger.error("[ERROR] XPath 'log_in' 미정의")
         return False
-        
+
     if driver.find_elements(By.XPATH, log_in_xpath):
         x_path_send_keys(driver, log_in_xpath, account_id)
         move_mouse_naturally()
         x_path_send_keys(driver, log_in_xpath, Keys.RETURN)
         logger.info("[INFO] 전화번호 입력 성공")
     else:
-        logger.warning("[WARN] 입력창 없음(자동 인증/사이트 구조 변경 등)")
+        logger.warning("[WARN] 전화번호 입력창 미발견")
         return False
 
-    # 4. 비밀번호 입력도 동일하게 처리
     password_xpath = xpath_dict.get('password')
     if not password_xpath:
-        logger.error("[ERROR] XPath 'password'가 정의되지 않았습니다!")
+        logger.error("[ERROR] XPath 'password' 미정의")
         return False
-        
+
     if driver.find_elements(By.XPATH, password_xpath):
         x_path_send_keys(driver, password_xpath, id_dict[account_id])
         move_mouse_naturally()
         x_path_send_keys(driver, password_xpath, Keys.RETURN)
         logger.info("[INFO] 비밀번호 입력 성공")
-        time.sleep(3)  # 1차 로그인 처리 대기
+        time.sleep(3)
     else:
-        logger.warning("[WARN] 비밀번호 입력창 없음!")
+        logger.warning("[WARN] 비밀번호 입력창 미발견")
         return False
 
-    # 여기까지 1차 로그인(ID/PW) 완료
-    # 네이버밴드는 쿠키 복원 실패해도 1차 로그인은 항상 진행
-
-    # 5. 2차 인증 필요 여부 확인
+    # 2차 인증 필요 여부 확인
     if check_2fa_required(driver):
-        logger.info("[INFO] 2차 인증이 필요합니다. 자동 처리를 시작합니다...")
-        
+        logger.info("[INFO] 2차 인증 필요, 자동 처리 시작")
         if not handle_2fa_authentication(driver):
-            logger.error("[ERROR] 2차 인증 처리 실패!")
+            logger.error("[ERROR] 2차 인증 처리 실패")
             return False
-        
-        logger.info("[INFO] 2차 인증 완료!")
+        logger.info("[INFO] 2차 인증 완료")
     else:
-        logger.info("[INFO] 2차 인증 없이 로그인 완료")
+        logger.info("[INFO] 2차 인증 없음, 로그인 완료")
 
-    # 로그인 완료!
-    # 쿠키 저장은 여기서 하지 않음!
-    # main.py에서 모든 자동화 작업 완료 후 save_cookies() 호출
-    
-    logger.info("[INFO] 로그인 완료! (쿠키는 자동화 작업 종료 후 저장됩니다)")
+    logger.info("[INFO] 로그인 완료, 쿠키 저장은 외부에서 수행 예정")
     return True

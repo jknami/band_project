@@ -188,6 +188,21 @@ def handle_2fa_authentication(driver):
             logger.warning("[WARN] 인증번호 입력창을 찾을 수 없습니다.")
             return False
         
+         # 3-1. '다시묻지않기' 체크박스 클릭
+        dont_ask_again_xpath = xpath_dict.get('다시묻지않기')
+        if not dont_ask_again_xpath:
+            logger.warning("[WARN] XPath '다시묻지않기'가 정의되지 않았습니다.")
+        else:
+            try:
+                if driver.find_elements(By.XPATH, dont_ask_again_xpath):
+                    x_path_send_keys(driver, dont_ask_again_xpath, Keys.SPACE)
+                    logger.info("[INFO] '다시묻지않기' 체크박스 클릭 완료")
+                    time.sleep(0.5)
+                else:
+                    logger.warning("[WARN] '다시묻지않기' 체크박스를 찾을 수 없습니다.")
+            except Exception as e:
+                logger.warning(f"[WARN] '다시묻지않기' 클릭 중 오류 발생: {e}")
+
         # 4. '인증번호 확인' 버튼 클릭
         confirm_button_xpath = xpath_dict.get('sms_input_submit')
         if not confirm_button_xpath:

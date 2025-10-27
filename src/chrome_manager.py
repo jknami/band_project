@@ -52,118 +52,96 @@ def close_restore_popup(driver):
     except Exception as e:
         logger.error(f"[WARN] 복원 팝업 닫기 실패: {e}")
 
+import undetected_chromedriver as uc
+from selenium_stealth import stealth
+from config import DEFAULT_CHROME_OPTIONS  # 탐지 우회용 기본 옵션들
+import logging
 
-def select_mobile_and_get_driver():
+logger = logging.getLogger(__name__)
+
+def get_stealth_driver(profile_dir: str, user_agent: str):
     """
-    pyautogui로 전화번호를 선택하고, 해당 번호의 크롬 프로필을 적용한 드라이버를 생성,
-    네이버밴드 로그인 페이지로 자동 이동하여 반환합니다.
+    탐지 회피 강화용 undetected_chromedriver와 selenium-stealth를 적용한 크롬 드라이버 생성 함수
     
+    Args:
+        profile_dir (str): 크롬 프로필 경로
+        user_agent (str): User-Agent 문자열
+
     Returns:
-        tuple: (selected_mobile_num, chrome_driver)
+        uc.Chrome: 크롬 드라이버 인스턴스
     """
-    # 1) id_dict에서 전화번호 키 리스트 추출
-    ids = list(id_dict.keys())  # 사용 가능한 전화번호 목록
-    
-    # 2) pyautogui로 전화번호 선택
-    mobile_num = pyautogui.confirm('전화번호를 선택하시오', buttons=ids)  # 팝업창으로 선택
-    logger.info(f'선택한 전화번호는 {mobile_num}')  # 선택된 전화번호 로그 기록
+    try:
+        options = uc.ChromeOptions()
 
-    # 3) 선택된 전화번호에 맞는 크롬 프로필 경로 계산 및 생성
-    profile_dir = get_profile_path(mobile_num)  # 전화번호별 프로필 경로 가져오기
+        # 사용자 크롬 프로필 적용
+        options.add_argument(f"--user-data-dir={profile_dir}")
+        # 불필요한 로그 레벨 제한
+        options.add_argument('--log-level=3')
+        # GPU 가속 비활성화
+        options.add_argument('--disable-gpu')
+        # 계정별 User-Agent 지정
+        options.add_argument(f"user-agent={user_agent}")
 
-    # 4) 프로필 Preferences 파일 패치
-    fix_chrome_profile_preferences(profile_dir)  # 복원 팝업 등 차단 설정
+        # config.py에 정의된 탐지회피 옵션 모두 추가
+        for opt in DEFAULT_CHROME_OPTIONS:
+            options.add_argument(opt)
 
-    ####기존 탐지회피 옵션#####
-    # # 5) ChromeOptions 객체 생성 및 옵션 추가
-    # options = webdriver.ChromeOptions()  # 크롬 옵션 객체
-    # options.add_argument(f"--user-data-dir={profile_dir}")  # 프로필 적용
-    # options.add_argument('--log-level=3')  # 로그 레벨 최소화
-    # options.add_argument('--disable-gpu')  # GPU 사용 비활성화
-    # options.add_argument('--disable-software-rasterizer')  # 소프트웨어 래스터라이저 비활성화
+        # 비밀번호 저장 및 자동완성 팝업 차단
+        prefs = {
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False
+        }
+        options.add_experimental_option("prefs", prefs)
 
-    # # config.py에 정의된 기본 옵션 일괄 적용
-    # for opt in DEFAULT_CHROME_OPTIONS:  # 이미 탐지 회피 옵션 포함
-    #     options.add_argument(opt)  # 기본 옵션 추가
+        # 드라이버 생성 (서브프로세스 사용 권장)
+        driver = uc.Chrome(options=options, use_subprocess=True)
 
-    # options.add_argument(f"user-agent={USER_AGENT}")  # 사용자 에이전트 설정
-    
-    # # 추가 탐지 회피 관련 실험 옵션
-    # options.add_experimental_option("excludeSwitches", ["enable-automation"])  # 자동화 스위치 제외
-    # options.add_experimental_option("useAutomationExtension", False)  # 자동화 확장 사용 안함
+        # selenium-stealth 적용하여 navigator 등 JS 속성 위조 및 탐지 회피
+        stealth(driver,
+                languages=["ko-KR", "ko"],
+                vendor="Google Inc.",
+                platform="Win32",
+                webgl_vendor="Intel Inc.",
+                renderer="Intel Iris OpenGL Engine",
+                fix_hairline=True)
+
+        # 창 위치 및 크기 설정
+        driver.set_window_position(0, 0)
+        driver.maximize_window()
+
+        logger.info("[INFO] 탐지회피 크롬 드라이버 생성 완료")
+
+        return driver
+
+    except Exception as e:
+        logger.error(f"[ERROR] 탐지회피 크롬 드라이버 생성 실패: {e}")
+        raise
 
 
-    # 5) 계정별 User-Agent 선택 (있으면 계정별, 없으면 기본값)
+# from src.chrome_manager import get_stealth_driver  # 경로는 환경에 따라 달라질 수 있음
+def select_mobile_and_get_driver():
+    ids = list(id_dict.keys())
+    mobile_num = pyautogui.confirm('전화번호를 선택하시오', buttons=ids)
+    logger.info(f'선택한 전화번호: {mobile_num}')
+
+    profile_dir = get_profile_path(mobile_num)
+    fix_chrome_profile_preferences(profile_dir)
+
     user_agent = MOBILE_USER_AGENT_MAPPING.get(mobile_num, USER_AGENT)
     logger.info(f"[INFO] 사용할 User-Agent: {user_agent}")
 
-    ###⭐6) undetected_chromedriver 옵션 설정새로운 탐지회피 옵션###
-    options = uc.ChromeOptions()
-    options.add_argument(f"--user-data-dir={profile_dir}")
-    options.add_argument('--log-level=3')
-    options.add_argument('--disable-gpu')
+    # 모듈화된 탐지회피 드라이버 생성 함수 호출
+    driver = get_stealth_driver(profile_dir, user_agent)
 
-    options.add_argument(f"user-agent={user_agent}")  # ✅ 계정별 User-Agent 사용
+    move_mouse_naturally()
+    driver.get(NAVERBAND_URL)
+    time.sleep(2)
 
-    # config.py에 정의된 기본 옵션 일괄 적용
-    for opt in DEFAULT_CHROME_OPTIONS:  # 이미 탐지 회피 옵션 포함
-        options.add_argument(opt)  # 기본 옵션 추가
+    driver.selected_mobile = mobile_num
+    close_restore_popup(driver)
 
+    return mobile_num, driver
 
-    # 비밀번호 저장/자동완성 관리 팝업 사전 차단
-    prefs = {
-        "credentials_enable_service": False,  # 크롬 비밀번호 관리 서비스 OFF
-        "profile.password_manager_enabled": False  # 프로필 비밀번호 저장/자동완성 OFF
-    }
-    options.add_experimental_option("prefs", prefs)  # 프리퍼런스 옵션 적용
-    
-    # 6) ChromeDriverManager로 드라이버 설치/업데이트 후 실행(from selenium import webdriver  # 셀레니움 웹드라이버를 import할 경우사용)
-    # service = Service(ChromeDriverManager().install(), log_path='NUL')  # 윈도우 기준 콘솔 로그 숨김
-    # driver = webdriver.Chrome(service=service, options=options)  # 드라이버 생성
-
-
-    # 7) ⭐ undetected_chromedriver로 드라이버 생성
-    driver = uc.Chrome(options=options, use_subprocess=True)  # use_subprocess=True 권장
-
-    # ⭐ selenium-stealth 적용
-    stealth(driver,
-    languages=["ko-KR", "ko"],
-    vendor="Google Inc.",
-    platform="Win32",
-    webgl_vendor="Intel Inc.",
-    renderer="Intel Iris OpenGL Engine",
-    fix_hairline=True,
-)
-
-    # ⭐ 창 크기 및 위치 설정 (undetected-chromedriver는 기본적으로 창 크기와 위치를 자동으로 설정하지 않는 문제해결(듀얼 모니터 문제 해결))
-    driver.set_window_position(0, 0)  # 메인 모니터 왼쪽 상단으로 이동
-    driver.maximize_window()  # 창 최대화
-
-    move_mouse_naturally()  # 자연스러운 마우스 움직임
-
-    # 8) 네이버밴드 로그인 페이지로 자동 이동
-    driver.get(NAVERBAND_URL)  # config.py에서 정의한 URL로 이동
-    time.sleep(2)  # 페이지 로딩 대기
-
-    # # 탐지 JS 속성 우회 강화
-    # try:
-    #     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-    #         "source": """
-    #             Object.defineProperty(navigator, 'webdriver', {get: () => false});
-    #             Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-    #             Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko']});
-    #         """
-    #     })
-    # except Exception as e:
-    #     logger.error(f"[WARN] 탐지 JS 우회 코드 주입 실패: {e}")
-
-    # 9) 드라이버에 선택된 전화번호 정보 저장
-    driver.selected_mobile = mobile_num  # driver 객체에 선택 전화번호 속성 추가
-    
-    # 10) "페이지 복원" 팝업 자동 닫기 시도
-    close_restore_popup(driver)  # 복원 팝업 ESC로 닫기
-    
-    return mobile_num, driver  # 전화번호와 드라이버 반환
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ xpath_dict = {
     'sms_but':'//*[@id="content"]/div/div[1]/a[2]',
     'sms_input_space':'//*[@id="code"]',
     'sms_input_submit':'//*[@id="inputForm"]/button[1]',
+    '다시묻지않기':'//*[@id="inputForm"]/div[2]/div/label/span/text()',
     
 }
 
