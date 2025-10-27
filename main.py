@@ -54,6 +54,8 @@ def main():
         try:
             perform_logout(driver)
             save_cookies(driver)
+            close_time = time.strftime('%p %I시%M분%S초', time.localtime())
+            print(f'이 {mobile}project는 {close_time}에 완료하여 logout하였습니다.')
             driver.quit()
         except Exception as e:
             logger.error(f"종료 처리 중 예외 발생: {e}")
