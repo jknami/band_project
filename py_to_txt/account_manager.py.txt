@@ -7,7 +7,7 @@ import time
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException, NoSuchElementException
-
+import pyautogui
 from config import NAVERBAND_LOGIN_URL
 from src.utils import get_cookie_path, x_path_send_keys, logger, move_mouse_naturally
 from resources.xpath_dict import xpath_dict, id_dict
@@ -167,7 +167,7 @@ def handle_2fa_authentication(driver):
             logger.warning("[WARN] '문자로 받기' 버튼 미발견")
             return False
 
-        auth_code = input("[입력 필요] 핸드폰으로 전송된 인증번호 입력: ")
+        auth_code = pyautogui.prompt(title="인증번호", default='인증번호를 여기에..', text = "인증번호를 입력하시오")
         if not auth_code:
             logger.error("[ERROR] 인증번호 미입력")
             return False
@@ -209,7 +209,7 @@ def handle_2fa_authentication(driver):
             logger.warning("[WARN] '인증번호 확인' 버튼 미발견")
             return False
 
-        if "band.us/home" in driver.current_url or "band.us/band" in driver.current_url:
+        if "https://www.band.us/" in driver.current_url or "band.us" in driver.current_url:
             logger.info("[INFO] 2차 인증 완료, 홈 화면 진입 성공")
             return True
         else:

@@ -7,20 +7,22 @@ import time
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException, NoSuchElementException
-
+import pyautogui
 from config import NAVERBAND_LOGIN_URL
-from src.utils import get_cookie_path, x_path_send_keys, logger, move_mouse_naturally
+from src.utils import get_cookie_path, x_path_send_keys, move_mouse_naturally
 from resources.xpath_dict import xpath_dict, id_dict
+import logging
+logger = logging.getLogger(__name__)
 
-
-def save_cookies(driver):
+def save_cookies(driver, mobile):
     """
     현재 브라우저 세션의 쿠키를 account_id별 폴더에 JSON 형식으로 저장합니다.
     
-    주의: 이 함수는 login() 함수 안에서 호출되지 않습니다!
-         main.py에서 모든 자동화 작업(밴드 순회 등)이 완료된 후 호출됩니다.
+    Args:
+        driver: Selenium WebDriver
+        mobile (str): 계정 번호 (예: "01012345678")
     """
-    account_id = driver.selected_mobile
+    account_id = mobile  # ✅ 파라미터로 받은 mobile 사용!
     cookie_dir = get_cookie_path(account_id)
     cookie_path = os.path.join(cookie_dir, "cookies.json")
     
@@ -28,9 +30,9 @@ def save_cookies(driver):
         cookies = driver.get_cookies()
         with open(cookie_path, 'w', encoding='utf-8') as f:
             json.dump(cookies, f, ensure_ascii=False, indent=4)
-        logger.info(f"[INFO] 쿠키 저장 완료: {cookie_path}")
+        logger.info(f"✅ [{mobile}] 쿠키 저장 완료: {cookie_path}")
     except Exception as e:
-        logger.error(f"[ERROR] 쿠키 저장 실패: {e}")
+        logger.error(f"❌ [{mobile}] 쿠키 저장 실패: {e}")
 
 
 def load_cookies(driver, max_retries=1):
@@ -167,7 +169,7 @@ def handle_2fa_authentication(driver):
             logger.warning("[WARN] '문자로 받기' 버튼 미발견")
             return False
 
-        auth_code = input("[입력 필요] 핸드폰으로 전송된 인증번호 입력: ")
+        auth_code = pyautogui.prompt(title="인증번호", default='인증번호를 여기에..', text = "인증번호를 입력하시오")
         if not auth_code:
             logger.error("[ERROR] 인증번호 미입력")
             return False
@@ -209,7 +211,7 @@ def handle_2fa_authentication(driver):
             logger.warning("[WARN] '인증번호 확인' 버튼 미발견")
             return False
 
-        if "band.us/home" in driver.current_url or "band.us/band" in driver.current_url:
+        if "https://www.band.us/" in driver.current_url or "band.us" in driver.current_url:
             logger.info("[INFO] 2차 인증 완료, 홈 화면 진입 성공")
             return True
         else:

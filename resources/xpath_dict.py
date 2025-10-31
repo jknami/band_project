@@ -17,10 +17,10 @@ xpath_dict = {
     'log_out': '//*[@id="gnbProfileMenuPopup"]/ul[3]/li/a',
     'log_out_but': '//*[@id="wrap"]/div[3]/div/div/section/div/footer/button[2]',
     #2차인증요구
-    'sms_but':'//*[@id="content"]/div/div[1]/a[2]',
+    'sms_but':'//*[@id="content"]/div/div[1]/a',
     'sms_input_space':'//*[@id="code"]',
     'sms_input_submit':'//*[@id="inputForm"]/button[1]',
-    '다시묻지않기':'//*[@id="inputForm"]/div[2]/div/label/span/text()',
+    '다시묻지않기':'//*[@id="trust"]',
     
 }
 

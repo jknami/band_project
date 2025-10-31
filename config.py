@@ -11,7 +11,7 @@ COOKIE_DIRNAME = "cookies"
 
 # 밴드 XPath 리스트를 for문으로 생성
 BAND_LIST = [
-    f'//*[@id="content"]/section/div[2]/div/ul/li[{i}]/div/div/a/div[1]/div'
+    f'//*[@id="content"]/section/div[2]/div/ul/li[{i}]/div/div/a/div[1]/div/span'
     for i in range(2, 11)
 ]
 #활용예시
@@ -60,12 +60,12 @@ DEFAULT_CHROME_OPTIONS = [
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/115.0.0.0 Safari/537.36"
+    "Chrome/ 142.0.7444.60 Safari/537.36"
 )
 
 # 계정별 User-Agent 매핑 (Windows 11 + 탐지 회피를 위한 크롬 버전 다양화)
 MOBILE_USER_AGENT_MAPPING = {
     "01075381965": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.123 Safari/537.36",
     "01020664732": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.7050.110 Safari/537.36",
-    "01027851965": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7500.95 Safari/537.36",
+    "01027851965": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7444.60 Safari/537.36",
 }

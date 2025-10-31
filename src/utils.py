@@ -10,17 +10,22 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.alert import Alert
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from config import URL_MODES, CHROME_PROFILE_DIRNAME, COOKIE_DIRNAME
+from config import DEFAULT_HOME_URL, URL_MODES, CHROME_PROFILE_DIRNAME, COOKIE_DIRNAME
 from config import TXT_DIR, IMAGE_DIR
-import time, datetime
+import time
+import datetime
 import pygetwindow as gw
-#(pip install pygetwindow pyobjc-core pyobjc-framework-Quartz )
 import pyautogui
-import logging
-import os
-from logging.handlers import RotatingFileHandler
+import logging  # 이것만 남김
 from selenium.webdriver.remote.webelement import WebElement
 from resources.xpath_dict import xpath_dict
+
+# ===== 로깅 설정 =====
+# main.py에서 초기화하므로 여기서는 로거 객체만 생성
+logger = logging.getLogger(__name__)
+
+# ===== 이전의 핸들러, 포맷터 설정 코드는 모두 삭제 =====
+# (아래부터는 기존 함수들 그대로 유지)
 
 def get_root_dir() -> str:
     """
@@ -78,8 +83,6 @@ def resource_path(relative_path: str) -> str:
     return os.path.join(root, relative_path)
 
 
-
-
 def get_random_file(resource_dir: str) -> str:
     """
     지정 폴더에서 txt, jpg, jpeg, png, gif 모든 파일 중 랜덤 추출
@@ -114,49 +117,6 @@ def ensure_dir(path: str):
     # 2) 해당 경로가 실제로 존재하지 않으면, 새로 생성 (이미 있으면 아무 동작 없음)
     os.makedirs(abs_path, exist_ok=True)
 
-
-##############################
-# lgo저장 관련
-##############################
-
-# 1. 로그 저장 폴더를 프로젝트 루트 기준으로 절대경로 변환
-log_dir = resource_path("logs")
-
-# 2. 로그 폴더가 없으면 반드시 새로 생성 (파일 저장 시도 시 에러 방지)
-os.makedirs(log_dir, exist_ok=True)
-
-# 3. 모듈 전역에서 사용할 logger 객체 생성 및 기본 로그 레벨 설정
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # INFO 이상 로그만 기록
-
-# 4. 파일 핸들러 생성
-#    크기는 10MB, 최대 5개의 이전 로그파일을 순환 저장하도록 설정
-file_handler = RotatingFileHandler(
-    filename=os.path.join(log_dir, "app.log"),  # 로그파일 이름과 경로 지정
-    maxBytes=10 * 1024 * 1024,  # 10MB
-    backupCount=5               # 최대 백업 파일 수
-)
-file_handler.setLevel(logging.INFO)  # 파일에 기록할 최소 로그 레벨 설정
-
-# 5. 로그 출력 포맷 지정 (시간, 로그레벨, 메시지 포함)
-formatter = logging.Formatter(
-    '[%(asctime)s] [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-file_handler.setFormatter(formatter)
-
-# 6. 생성한 파일 핸들러를 logger에 추가해 파일로 로그 기록 가능
-logger.addHandler(file_handler)
-
-# 7. 콘솔에도 로그를 출력하려면 콘솔 핸들러 생성 및 연결
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)  # 콘솔에 출력할 로그 레벨 설정
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-# 이후부터는 기존과 동일하게
-# logger.info("메시지"), logger.warning("경고"), logger.error("오류") 등 사용
-
-
 ##############################
 # 계정별 크롬 프로필/쿠키 경로 지원 함수
 ##############################
@@ -185,6 +145,27 @@ def get_cookie_path(mobile_num: str) -> str:
     cookie_path = resource_path(f"accounts/{mobile_num}/{COOKIE_DIRNAME}")
     ensure_dir(cookie_path)  # 경로가 없으면 자동 생성
     return cookie_path
+
+def get_cache_timestamp_file(mobile_num: str) -> str:
+    """
+    계정별 ChromeDriver 캐시 타임스탬프 파일 경로를 반환합니다.
+    
+    Args:
+        mobile_num (str): 전화번호 (예: '01027851965')
+    
+    Returns:
+        str: 해당 계정의 캐시 타임스탬프 파일 절대 경로
+    """
+    # ✅ 파일명까지 포함된 전체 경로
+    cache_timestamp_file = resource_path(
+        f"accounts/{mobile_num}/.chromedriver_cache_timestamp"
+    )
+    
+    logger.info(f'get_cache_timestamp_file()->cache_timestamp_path의 경로는 {cache_timestamp_file}')
+    
+    return cache_timestamp_file
+
+
 
 
 # 기본 디렉토리 생성
@@ -226,7 +207,7 @@ def human_delay(stage="default"):
     }
     min_d, max_d = delays.get(stage, delays["default"])
     t = random.uniform(min_d, max_d)
-    logger.info(f"[DELAY] {stage} 단계: {t:.2f}초 대기")
+    logger.info(f"[human_delay] {stage} 단계: {t:.2f}초 대기")
     time.sleep(t)
 
 
@@ -258,17 +239,19 @@ def focus_window(title_substring):
     Args:
         title_substring (str): 창 제목(url) 일부를 넣으면 됨
     """
-    windows = gw.getWindowsWithTitle(title_substring)
-    if windows:
-        win = windows[0]
-        if not win.isActive:
-            win.activate()
-            time.sleep(0.5)
-        if not win.isMaximized:
-            win.maximize()
-        # logger.info(f"[INFO] 창 포커스 및 최대화: {win.title}")
-    else:
-        logger.warning(f"[WARN] 창 '{title_substring}' 찾지 못함")
+    try:  # ← 추가!
+        windows = gw.getWindowsWithTitle(title_substring)
+        if windows:
+            win = windows[0]
+            if not win.isActive:
+                win.activate()
+                time.sleep(0.5)
+            if not win.isMaximized:
+                win.maximize()
+        else:
+            logger.warning(f"[WARN] 창 '{title_substring}' 찾지 못함")
+    except Exception as e:  # ← 추가!
+        logger.warning(f"[WARN] 창 포커스 실패 (무시): {e}")  # ← 추가!
 
 
 
@@ -375,76 +358,47 @@ def save_error_screenshot(driver, filename_prefix="error"):
     driver.save_screenshot(filepath)
     logger.info(f"[INFO] 에러 스크린샷 저장: {filepath}")
 
-def go_home(driver, xpath_dict, wait_time=10):
-    """
-    xpath_dict 내 '홈' 키의 XPath를 활용해 네이버 밴드 홈 화면으로 강제 복귀하는 함수
+def safe_go_home(driver):
+    """홈 복귀 + 밴드 목록 로드 확인"""
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.by import By
     
-    Args:
-        driver: Selenium WebDriver 객체
-        xpath_dict: XPath가 정의된 딕셔너리 (resources/xpath_dict.py)
-        wait_time: 엘리먼트 대기 시간 (초)
-    
-    동작:
-        - '홈' 버튼이 클릭 가능할 때까지 기다림
-        - 클릭 후 약간 대기
-        - 예외 발생 시 에러 로깅
-    """
     try:
-        wait = WebDriverWait(driver, wait_time)
-        wait.until(EC.element_to_be_clickable((By.XPATH, xpath_dict['홈'])))
-        home_button = driver.find_element(By.XPATH, xpath_dict['홈'])
-        home_button.click()
-        logger.info("[복구] 홈 버튼 클릭하여 강제 복귀 성공")
-        time.sleep(2)  # 페이지 로딩 대기
+        # 홈 URL로 이동
+        driver.get(DEFAULT_HOME_URL)
+        logger.info(f"홈 URL로 이동: {DEFAULT_HOME_URL}")
+        
+        # 밴드 목록 로드 대기 (최대 10초)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.XPATH, '//*[@id="content"]/section/div[2]/div/ul')
+            )
+        )
+        
+        time.sleep(1)  # 안정화
+        logger.info("✅ 홈 복귀 완료")
+        return True
+        
     except Exception as e:
-        logger.error(f"[복구 실패] 홈 버튼 클릭 실패: {e}")
-        # 추가 복구 로직을 여기에 작성 가능
+        logger.error(f"홈 복귀 실패: {e}")
+        return False
 
 
 def x_path_click(driver, xpath: str, wait_time=10):
     """
-    지정한 xpath를 클릭하는 함수.
-    클릭 전후 랜덤 딜레이와 실패 시 스크린샷/사람 행동 패턴 흉내 추가.
-
-
-    Args:
-        driver: Selenium WebDriver 객체
-        xpath: 클릭 대상 xpath 문자열
-        wait_time: 요소 대기 시간(초)
+    XPath 클릭 (순수 기능만)
     """
     try:
-        human_delay('click')  # 클릭 전 랜덤 딜레이
         wait = WebDriverWait(driver, wait_time)
-        wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-        element = driver.find_element(By.XPATH, xpath)
+        element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
         driver.execute_script("arguments[0].click();", element)
-        random_sleep(0.2, 0.8)  # 클릭 후 랜덤 딜레이
-
-    except (TimeoutException, NoSuchElementException) as e:
-        logger.warning(f"[WARN] XPATH 클릭 실패: {xpath}\n에러: {e}")
-
-        # 스크린샷 저장 (utils.py에 구현한 save_error_screenshot 함수 사용)
-        save_error_screenshot(driver, "xpath_click_fail")
-
-        # 사람 행동 패턴 흉내: 마우스 자연 이동 + 딜레이 후 재시도 시도
-        move_mouse_naturally()
-        human_delay('thinking')
-
-        # 재시도 시도 (1회만)
-        try:
-            human_delay('click')
-            wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
-            element = driver.find_element(By.XPATH, xpath)
-            driver.execute_script("arguments[0].click();", element)
-            random_sleep(0.3, 0.9)
-        except Exception:
-            raise  # 재시도 실패 시 예외 다시 발생
-
+        
     except Exception as e:
-        logger.error(f"[ERROR] 알 수 없는 예외: {e}")
-        save_error_screenshot(driver, "xpath_click_unknown_error")
-        # 홈 복귀는 상위에서 처리하도록 분리
-        raise
+        logger.warning(f"클릭 실패, 재시도: {xpath}")
+        wait = WebDriverWait(driver, wait_time)
+        element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        driver.execute_script("arguments[0].click();", element)
 
 
 def x_path_human_click(driver, xpath: str, wait_time=10):
@@ -456,7 +410,7 @@ def x_path_human_click(driver, xpath: str, wait_time=10):
         wait_time: 요소 대기 시간(초)
     """
     try:
-        human_delay("click")  # 클릭 전 자연스러운 대기
+        # human_delay("click")  # 클릭 전 자연스러운 대기
 
         # 1. 15초 내 표시+활성화될 때까지 polling
         for _ in range(int(wait_time * 2)):
@@ -481,11 +435,11 @@ def x_path_human_click(driver, xpath: str, wait_time=10):
 
         # 2. pyautogui 등 보조도 가능하지만 우선 JS click + 추가 delay
         driver.execute_script("arguments[0].scrollIntoView(true);", element)
-        human_delay("click")
+        # human_delay("click")
         driver.execute_script("arguments[0].click();", element)
         logger.info("[INFO] 글쓰기 버튼 강제 클릭 성공")
 
-        human_delay("default")  # 클릭 후 더 자연스러운 행동 흉내
+        # human_delay("default")  # 클릭 후 더 자연스러운 행동 흉내
 
     except (TimeoutException, NoSuchElementException) as e:
         logger.warning(f"[WARN] XPATH 클릭 실패: {xpath}\n에러: {e}")
@@ -535,8 +489,8 @@ def x_path_send_keys(driver, xpath: str, send: str, wait_time=10):
         save_error_screenshot(driver, "xpath_send_keys_fail")
 
         # 사람 행동 패턴 흉내: 마우스 자연 이동 + 딜레이 후 재시도 시도
-        move_mouse_naturally()
-        human_delay('thinking')
+        # move_mouse_naturally()
+        # human_delay('thinking')
 
         # 재시도 (1회만)
         try:
@@ -552,3 +506,24 @@ def x_path_send_keys(driver, xpath: str, send: str, wait_time=10):
         logger.error(f"[ERROR] 알 수 없는 예외: {e}")
         save_error_screenshot(driver, "xpath_send_keys_unknown_error")
         raise
+
+from selenium.webdriver.common.alert import Alert
+
+def handle_js_alert(driver, action='accept'):
+    """
+    JS alert/confirm 창을 닫는다.
+    action='accept'이면 '확인', 'dismiss'이면 '취소' 버튼을 누름
+    """
+    try:
+        alert = Alert(driver)
+        if action == 'accept':
+            alert.accept()
+            logger.info("JS alert/confirm 창을 Alert.accept()로 닫음")
+        elif action == 'dismiss':
+            alert.dismiss()
+            logger.info("JS alert/confirm 창을 Alert.dismiss()로 닫음")
+        else:
+            logger.warning(f"action 파라미터가 잘못됨: {action}")
+    except Exception as e:
+        logger.error(f"Alert/confirm 창 제어 실패: {e}")
+

@@ -10,31 +10,30 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.alert import Alert
-from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException, InvalidSessionIdException, NoSuchWindowException
 from selenium.webdriver.common.keys import Keys
 from src.utils import (resource_path,
-    get_random_file, x_path_click, human_delay, move_mouse_naturally, focus_window, logger)
+    get_random_file, safe_go_home, x_path_click, human_delay, move_mouse_naturally, focus_window)
 from config import *
 from resources.xpath_dict import xpath_dict
 from src.utils import realistic_typing, safe_xpath_click, x_path_human_click
+from src.utils import handle_js_alert
 
-def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, do_clear=True):
+import logging
+logger = logging.getLogger(__name__)
+
+def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, do_clear=True, js_alert_action='accept'):
     """
-    지정된 폴더 내 랜덤 텍스트 파일에서 내용을 읽어 해당 xpath 텍스트 입력란에 현실적인 타이핑 패턴으로 자동 입력합니다.
-
-    Args:
-        driver: Selenium WebDriver 객체
-        xpath: 텍스트 입력란 xpath
-        folder_path: 텍스트 파일이 위치한 폴더 경로
-        wait_time: 요소 대기 시간(초), 기본 10초
-        do_clear: 기존 텍스트를 지울지 여부, 기본 True
-
-    Raises:
-        UnicodeDecodeError: 텍스트 인코딩 실패 시 발생
-        Exception: 그 외 예외 발생 시 로그 및 스크린샷 후 예외 재발생
+    텍스트 자동 입력 (Alert 발생 시 자동 처리 및 글쓰기 창 닫기)
     """
+    from selenium.common.exceptions import UnexpectedAlertPresentException, ElementNotInteractableException
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.common.by import By
+    
     file = get_random_file(folder_path)
+    
     try:
+        # 텍스트 입력 로직
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
         element = driver.find_element(By.XPATH, xpath)
@@ -43,11 +42,10 @@ def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, d
             try:
                 element.clear()
             except Exception as e:
-                logger.warning(f"[WARN] 텍스트 입력 전 클리어 실패: {e}")
+                logger.warning(f"[WARN] 클리어 실패: {e}")
 
-        human_delay('click')  # 클릭 전 자연 딜레이 삽입
         element.click()
-        time.sleep(random.uniform(0.3, 1.1))  # 클릭 후 자연스러운 대기
+        time.sleep(random.uniform(0.3, 1.1))
 
         text_content = None
         for encoding in ('utf-8', 'utf-8-sig', 'cp949'):
@@ -59,20 +57,50 @@ def write_text_from_folder(driver, xpath: str, folder_path: str, wait_time=10, d
                 continue
 
         if text_content is None:
-            raise UnicodeDecodeError(f"모든 인코딩 시도 실패: {file}")
+            logger.error(f"인코딩 실패: {file}")
+            return False
 
         text_content = text_content.strip()
         if len(text_content) > 1600:
             text_content = text_content[:random.randint(1200, 1500)]
 
         realistic_typing(element, text_content)
-        logger.info(f"[INFO] 본문 자동 입력 성공: {file}")
+        logger.info(f"[INFO] 본문 입력 성공: {file}")
+        return True
 
+    except (UnexpectedAlertPresentException, ElementNotInteractableException) as e:
+        # ✅ Alert 감지 및 처리
+        logger.info(f"⚠️  Alert 감지, 자동 처리 중...")
+        
+        # 1. Alert 처리
+        handle_js_alert(driver, action=js_alert_action)
+        time.sleep(1)
+        
+        # 2. 글쓰기 창 닫기
+        try:
+            driver.find_element(By.TAG_NAME, '//*[@id="wrap"]/div[3]/div/div/section/div/footer/button').send_keys(Keys.ESCAPE)
+            time.sleep(1)
+            handle_js_alert(driver, action='accept')  # 취소 확인
+            logger.info("✅ 글쓰기 창 닫기 완료")
+        except Exception as close_err:
+            logger.warning(f"글쓰기 창 닫기 실패: {close_err}")
+        
+        return False
+    
     except Exception as e:
-        # 에러 시 스크린샷과 로그 기록
-        driver.save_screenshot("input_error_debug.png")
-        logger.error(f"[ERROR] 본문 입력 실패: {file}\n에러: {e}")
-        raise
+        logger.warning(f"⚠️  에러: {type(e).__name__}")
+        handle_js_alert(driver, action=js_alert_action)
+        
+        # 글쓰기 창 닫기
+        try:
+            driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+            time.sleep(1)
+            handle_js_alert(driver, action='accept')
+        except:
+            pass
+        
+        return False
+
 
 def upload_file_from_folder(driver, folder_path: str, wait_time=10):
     """
@@ -80,7 +108,7 @@ def upload_file_from_folder(driver, folder_path: str, wait_time=10):
     예외 발생 시 홈으로 가지 않고, print 후 raise.
     """
     file_path = get_random_file(folder_path)
-    move_mouse_naturally()
+    # move_mouse_naturally()
     try:
         wait = WebDriverWait(driver, wait_time)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='file']")))
@@ -98,46 +126,34 @@ def upload_file_from_folder(driver, folder_path: str, wait_time=10):
         logger.error(f"[ERROR] 알 수 없는 예외: {e}")
         raise
 
-
-
 def process_band(driver, xpath_dict, band, TXT_DIR, IMAGE_DIR):
-    """
-    밴드 작업을 사람 행동처럼 자연스럽게 수행
-    """
-    # 브라우저 창 포커스 유지 (윈도우창 제목 예시)
-    focus_window("band")
-
-    # 마우스 자연 이동 후 밴드 클릭
+    
+    focus_window("band") # 창 포커스 맞추기가 문제의 핵심이었음
     move_mouse_naturally()
     x_path_click(driver, band)
     human_delay("click")
 
-    # 글쓰기 버튼 클릭 + 고민 시간
     human_delay("thinking")
     x_path_human_click(driver, xpath_dict['글쓰기_1'])
 
-    # 텍스트 입력 (느린 타이핑 포함)
     write_text_from_folder(driver, xpath_dict['글쓰기_2'], TXT_DIR)
     human_delay("typing")
 
-    # 이미지 업로드 + 대기
     upload_file_from_folder(driver, IMAGE_DIR)
     human_delay("upload")
 
-    # 이미지 첨부 클릭 (마우스 이동 포함)
-    move_mouse_naturally()
+    # move_mouse_naturally()
     x_path_click(driver, xpath_dict['이미지첨부'])
     human_delay("click")
 
-    # 게시하기 클릭 + 생각시간
     x_path_click(driver, xpath_dict['이미지게시'])
     human_delay("thinking")
 
-    # 화면 스크롤 후 홈으로 돌아가기
     driver.execute_script("window.scrollBy(0, window.innerHeight / 3)")
     human_delay("scroll")
     x_path_click(driver, xpath_dict['홈'])
     human_delay("scroll")
+
 
 def perform_logout(driver):
     """
@@ -157,62 +173,108 @@ def perform_logout(driver):
     except Exception as e:
         logger.error(f"[ERROR] 로그아웃 도중 오류: {e}")
 
-from src.utils import go_home
-def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, MAX_ERROR_CNT=3, mobile_num=None):
+
+def roof_bands(driver, xpath_dict, BAND_LIST, TXT_DIR, IMAGE_DIR, mobile_num=None):
+    """
+    밴드 순회 함수
+    
+    Args:
+        driver: Selenium WebDriver
+        xpath_dict: XPath 딕셔너리
+        BAND_LIST: 밴드 목록
+        TXT_DIR: 텍스트 디렉토리
+        IMAGE_DIR: 이미지 디렉토리
+        mobile_num (str, optional): 계정 번호 (로깅용)
+    
+    Returns:
+        list: 실패한 밴드 목록
+    """
+    # ===== 초기화 =====
     band_list = BAND_LIST.copy()
     random.shuffle(band_list)
-    error_cnt = 0
-    log_failed_bands = []
-
-    for row, band in enumerate(band_list[:]):
+    
+    total_bands = len(band_list)
+    success_count = 0
+    failed_bands = []
+    
+    # 로깅용 프리픽스
+    prefix = f"[{mobile_num}] " if mobile_num else ""
+    logger.info(f"{prefix}🚀 밴드 순회 시작 (총 {total_bands}개)")
+    
+    # ===== 밴드 순회 =====
+    while band_list:
+        band = band_list[0]
+        current = total_bands - len(band_list) + 1
+        band_success = False
+        
         try:
-            # process_band 내에서 복구는 하지 않고, 예외를 상위로 던짐
+            logger.info(f"{prefix}[{current}/{total_bands}] 밴드 처리 시작")
+            
+            # 밴드 처리
             process_band(driver, xpath_dict, band, TXT_DIR, IMAGE_DIR)
-            error_cnt = 0
-
+            
+            # 성공!
+            band_success = True
+            logger.info(f"{prefix}[{current}] ✅ 성공!")
+        
+        # ===== 예외 처리 =====
         except UnexpectedAlertPresentException:
+            # Alert 팝업 처리
+            logger.warning(f"{prefix}[{current}] ⚠️  Alert 팝업 감지")
+            
+            # ✅ 당신의 함수 사용!
+            handle_js_alert(driver, action='accept')
+            human_delay("thinking")
+            
+            # Alert 처리 후 홈 복귀
             try:
-                alert = Alert(driver)
-                alert.accept()
-                logger.info(f"{row + 1}번째 밴드: alert 자동 닫기 성공")
-                human_delay("thinking")
-            except NoAlertPresentException:
-                logger.warning(f"{row + 1}번째 밴드: alert 존재하지 않음")
-            except Exception as e:
-                logger.error(f"{row + 1}번째 밴드: alert 처리 에러: {e}")
-            error_cnt += 1
-            if band not in log_failed_bands:
-                log_failed_bands.append(band)
-
-            # 홈 복귀 처리 - 상위에서 관리
-            try:
-                go_home(driver, xpath_dict)
-            except Exception as recover_e:
-                logger.error(f"[복구 실패] 홈 복귀 실패: {recover_e}")
-
+                safe_go_home(driver)
+            except Exception as home_err:
+                logger.error(f"{prefix}홈 복귀 실패: {home_err}")
+        
         except Exception as e:
-            logger.warning(f"{row + 1}번째 밴드 실패: {type(e)} - {e}")
-            error_cnt += 1
-            if band not in log_failed_bands:
-                log_failed_bands.append(band)
-
+            # 그 외 모든 에러
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.warning(f"{prefix}[{current}] ⚠️  에러 ({error_type}): {error_msg[:100]}")
+            
+            # ✅ 여기서도 Alert 처리 (당신의 함수)
+            handle_js_alert(driver, action='accept')
+            
+            # 홈 복귀 시도
             try:
-                go_home(driver, xpath_dict)
-            except Exception as recover_e:
-                logger.error(f"[복구 실패] 홈 복귀 실패: {recover_e}")
-
+                safe_go_home(driver)
+            except Exception as home_err:
+                logger.error(f"{prefix}홈 복귀 실패: {home_err}")
+        
+        # ===== 후처리 =====
         finally:
-            if error_cnt >= MAX_ERROR_CNT:
-                logger.critical(f"연속 {MAX_ERROR_CNT}회 실패 발생! 관리자 개입 필요")
-                # 필요시 관리자 알림 콜 등 추가 가능
-                error_cnt = 0
+            # 성공 여부에 따라 처리
+            if band_success:
+                band_list.remove(band)
+                success_count += 1
+            else:
+                band_list.remove(band)
+                failed_bands.append(band)
+            
+            # 다음 밴드 전 대기 및 마우스 이동
+            if band_list:
+                sleep_time = random.randint(5, 15)
+                logger.info(f"{prefix}[{current}] 완료, 남은 밴드: {len(band_list)}개, {sleep_time}초 대기")
+                time.sleep(sleep_time)
+                move_mouse_naturally()
+    
+    # ===== 결과 요약 =====
+    logger.info("=" * 50)
+    logger.info(f"{prefix}🎉 밴드 순회 완료!")
+    logger.info(f"{prefix}✅ 성공: {success_count}/{total_bands}개")
+    logger.info(f"{prefix}❌ 실패: {len(failed_bands)}/{total_bands}개")
+    logger.info("=" * 50)
+    
+    if failed_bands:
+        logger.warning(f"{prefix}실패한 밴드 목록: {failed_bands}")
+    
+    return failed_bands
 
-            band_list.remove(band)
-            sleep_time = random.randint(5, 15)
-            logger.info(f"{row + 1}번째 밴드 작업 완료, 남은 밴드: {len(band_list)}, {sleep_time}초 대기 중")
-            time.sleep(sleep_time)
-            move_mouse_naturally()
 
-    logger.info(f"roof_bands 실패 밴드 리스트: {log_failed_bands}")
-    return log_failed_bands
 
